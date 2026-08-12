@@ -2,6 +2,11 @@
   "name": "take6-viewer",
   "version": "0.2.0",
   "unpkg": "dist/main.js",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/boardgamers/take6.git",
+    "directory": "viewer"
+  },
   "dependencies": {
     "@hex-engine/2d": "^0.4.1",
     "lodash": "^4.18.1",
@@ -15,7 +20,8 @@
     "start": "hex-engine-scripts dev",
     "dev": "hex-engine-scripts dev",
     "build": "hex-engine-scripts build",
-    "test": "hex-engine-scripts test"
+    "test": "hex-engine-scripts test",
+    "prepublishOnly": "npm run build"
   },
   "files": [
     "dist",

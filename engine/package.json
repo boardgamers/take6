@@ -5,7 +5,11 @@
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "source": "index.ts",
-  "repository": "git@github.com:donkeytech/take6-engine.git",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/boardgamers/take6.git",
+    "directory": "engine"
+  },
   "publishConfig": {
     "access": "public"
   },

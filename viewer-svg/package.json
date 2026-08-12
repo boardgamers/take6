@@ -1,6 +1,11 @@
 {
   "name": "@gaia-project/take6-viewer",
   "version": "0.3.8",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/boardgamers/take6.git",
+    "directory": "viewer-svg"
+  },
   "scripts": {
     "serve": "vue-cli-service serve",
     "build": "vue-cli-service build",

@@ -1,0 +1,55 @@
+name: Viewer - Version and Release
+
+on:
+    workflow_dispatch:
+        inputs:
+            newversion:
+                description: 'Semantic Version Bump Type'
+                type: choice
+                required: true
+                default: patch
+                options:
+                    - patch
+                    - minor
+                    - major
+
+env:
+    node_version: 24
+
+defaults:
+    run:
+        working-directory: viewer
+
+jobs:
+    version_and_release:
+        runs-on: ubuntu-latest
+        permissions:
+            contents: write
+            id-token: write
+        steps:
+            - uses: actions/checkout@v6
+            - name: Use Node.js ${{ env.node_version }}
+              uses: actions/setup-node@v6
+              with:
+                  node-version: ${{ env.node_version }}
+                  # registry-url is required so npm publish targets the public npm registry
+                  registry-url: 'https://registry.npmjs.org'
+            - run: corepack enable
+            - run: pnpm install
+            - run: git config --global user.name github-actions
+            - run: git config --global user.email bot@github.com
+            - run: |
+                  PACKAGE_VERSION=$(node -p "require('./package.json').version")
+                  BUMPED_VERSION=$(node -p "require('semver').inc('$PACKAGE_VERSION', '${{ github.event.inputs.newversion }}')")
+                  # Update package.json with the new version
+                  node -e "const fs = require('fs'); const package = JSON.parse(fs.readFileSync('./package.json')); package.version = '$BUMPED_VERSION'; fs.writeFileSync('./package.json', JSON.stringify(package, null, '  ') + '\n');"
+                  git add .
+                  git commit -m "🔖 take6-viewer $BUMPED_VERSION"
+            # pnpm 10.16+ supports OIDC trusted publishing (id-token: write above) and rewrites
+            # the workspace:* take6-engine dependency to a real version range on publish.
+            # NODE_OPTIONS=--openssl-legacy-provider works around webpack 4's reliance on MD4,
+            # which OpenSSL 3 (bundled with Node >= 17) no longer supports out of the box.
+            - run: pnpm publish --no-git-checks
+              env:
+                  NODE_OPTIONS: --openssl-legacy-provider
+            - run: git push --follow-tags
