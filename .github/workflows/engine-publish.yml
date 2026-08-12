@@ -38,13 +38,13 @@ jobs:
             - run: pnpm install
             - run: git config --global user.name github-actions
             - run: git config --global user.email bot@github.com
+            # npm version bumps the version in package.json (no semver module needed, which
+            # pnpm's non-hoisted node_modules wouldn't provide anyway)
+            - run: npm version ${{ github.event.inputs.newversion }} --no-git-tag-version
             - run: |
                   PACKAGE_VERSION=$(node -p "require('./package.json').version")
-                  BUMPED_VERSION=$(node -p "require('semver').inc('$PACKAGE_VERSION', '${{ github.event.inputs.newversion }}')")
-                  # Update package.json with the new version
-                  node -e "const fs = require('fs'); const package = JSON.parse(fs.readFileSync('./package.json')); package.version = '$BUMPED_VERSION'; fs.writeFileSync('./package.json', JSON.stringify(package, null, '  ') + '\n');"
                   git add .
-                  git commit -m "🔖 take6-engine $BUMPED_VERSION"
+                  git commit -m "🔖 take6-engine $PACKAGE_VERSION"
             # pnpm 10.16+ supports OIDC trusted publishing (id-token: write above).
             - run: pnpm publish --no-git-checks
             - run: git push --follow-tags
