@@ -1,0 +1,11 @@
+{
+  "name": "take6",
+  "private": true,
+  "description": "Monorepo for the Take6 (6nimmt-like) game engine and its viewers",
+  "license": "MIT",
+  "author": "coyotte508",
+  "scripts": {
+    "build": "pnpm -r run build",
+    "test": "pnpm --filter take6-engine run test"
+  }
+}

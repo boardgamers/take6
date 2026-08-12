@@ -1,0 +1,16 @@
+packages:
+  - "engine"
+  - "viewer"
+  - "viewer-svg"
+overrides:
+  # The Vue 2 toolchain (vue-loader@15) needs the v2.7 @vue/compiler-sfc string parser;
+  # pnpm would otherwise resolve it to the Vue 3 compiler, whose object-API parse()
+  # breaks vue-loader@15. (fork-ts-checker is disabled in viewer-svg's build, so its
+  # incompatible expectation of the v3 `{ descriptor }` API no longer matters.)
+  "@vue/compiler-sfc": "2.7.16"
+allowBuilds:
+  "@parcel/watcher": false
+  core-js: false
+  ejs: false
+  nodent-runtime: false
+  yorkie: false
