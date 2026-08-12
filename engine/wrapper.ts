@@ -82,6 +82,10 @@ export function round (G: GameState) {
   return G.round;
 }
 
+export async function moveAI (G: GameState, player: number): Promise<GameState> {
+  return engine.moveAI(G, player);
+}
+
 export async function dropPlayer (G: GameState, player: number) {
   G.players[player].isAI = true;
 
