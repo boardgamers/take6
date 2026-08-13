@@ -55,6 +55,16 @@ export class GameController {
   private applying = false;
 
   private cards = new Map<number, CardEntry>();
+  /**
+   * Hidden (face-down, number 0) picks, tracked per player. stripSecret logs
+   * every hidden opponent ChooseCard as `{number: 0, points: 0}`, so keying
+   * `cards` by card number cannot disambiguate them — keying by player can.
+   * The entry ALSO sits in `cards` under its current map key; the entry is
+   * removed from both maps when it is discarded. Invariant: at any time at
+   * most ONE entry per player lives in this map, and it is resolved to its
+   * real card number exactly once (in applyReveal / applyPlace).
+   */
+  private hiddenPicks = new Map<number, CardEntry>();
   private drag: {
     entry: CardEntry;
     pointerId: number;
@@ -177,6 +187,8 @@ export class GameController {
         this.cards.delete(num);
       }
     }
+    // The card map was rebuilt from scratch; hidden picks are re-derived below.
+    this.hiddenPicks.clear();
 
     const spawn = (card: Card, zone: Zone, faceUp: boolean): CardEntry => {
       let entry = this.cards.get(card.number);
@@ -228,6 +240,9 @@ export class GameController {
         const entry = spawn(pl.faceDownCard, { kind: "pick", player: p }, faceUp);
         const pos = pickSlot(p, G.players.length);
         this.flyTo(entry, pos.x, pos.z, pos.rotZ, { faceUp, y: CARD_T, animated, zIndex: 40 + p });
+        if (entry.view.card.number === 0) {
+          this.hiddenPicks.set(p, entry);
+        }
       }
     });
 
@@ -288,6 +303,7 @@ export class GameController {
     if (!this.G) {
       return;
     }
+    this.pruneStaleCards();
     if (this.pendingAvailableMoves) {
       this.G.players.forEach((pl, i) => {
         pl.availableMoves = this.pendingAvailableMoves![i] ?? null;
@@ -438,35 +454,52 @@ export class GameController {
   private async applyReveal(cards: Card[]) {
     const G = this.G!;
     const flips: Promise<void>[] = [];
+    const nPlayers = G.players.length;
     cards.forEach((card, p) => {
-      if (card.number === 0) {
-        return; // shouldn't happen
+      // A 0-numbered reveal slot means that player's pick is still hidden to
+      // us (pro/privacy rules) OR the pick was already revealed — the entry
+      // may already sit at its real number. Try the player's hidden pick
+      // first, then fall back to any pick entry we already track for them.
+      let entry: CardEntry | undefined;
+      let resolvedFrom: "hidden" | "known" | "materialized" = "hidden";
+
+      if (card.number !== 0) {
+        entry = this.cards.get(card.number);
       }
-      let entry = this.cards.get(card.number);
       if (!entry) {
-        // Card was hidden (number 0 placeholder): find the hidden pick of player p
-        entry = this.findHiddenPick(p);
+        entry = this.hiddenPicks.get(p);
         if (entry) {
+          this.hiddenPicks.delete(p);
           this.cards.delete(entry.view.number);
-          this.cards.set(card.number, entry);
-          entry.view.setCard(card);
+          if (card.number !== 0) {
+            this.cards.set(card.number, entry);
+            entry.view.setCard(card);
+          } else {
+            // Re-key under the synthetic slot so applyPlace can find it.
+            this.cards.set(-(p * 1000 + 500), entry);
+          }
+          resolvedFrom = "hidden";
         }
       }
       if (!entry) {
-        // Last resort: materialize it at the pick slot
-        const view = new CardView(card);
-        const pos = pickSlot(p, G.players.length);
+        // Last resort: materialize at the pick slot. The card is ALWAYS
+        // real (known) at this point — a 0 number means we lost track of the
+        // pick entirely, so materialize a face-down placeholder.
+        const realCard = card.number !== 0 ? card : { number: 0, points: 0 };
+        const view = new CardView(realCard);
+        const pos = pickSlot(p, nPlayers);
         view.anim.x = pos.x;
         view.anim.z = pos.z;
         view.anim.y = CARD_T;
         view.anim.flip = Math.PI;
         this.sceneMgr.scene.add(view.group);
         entry = { view, zone: { kind: "pick", player: p } };
-        this.cards.set(card.number, entry);
+        this.cards.set(card.number !== 0 ? card.number : -(p * 1000 + 500), entry);
+        resolvedFrom = "materialized";
       }
       entry.zone = { kind: "pick", player: p };
       const view = entry.view;
-      const pos = pickSlot(p, G.players.length);
+      const pos = pickSlot(p, nPlayers);
       view.zIndex = 40 + p;
       flips.push(
         (async () => {
@@ -475,7 +508,9 @@ export class GameController {
             duration: 0.55,
             easing: Easing.easeInOutCubic,
             onUpdate: (t) => {
-              view.anim.flip = Math.PI * (1 - t);
+              // Only flip face-up when we actually know the card.
+              const targetFlip = card.number !== 0 || resolvedFrom === "materialized" ? 0 : Math.PI;
+              view.anim.flip = THREE.MathUtils.lerp(view.anim.flip, targetFlip, t);
               view.anim.y = CARD_T + Math.sin(t * Math.PI) * 3.5;
               view.anim.x = pos.x;
               view.anim.z = pos.z;
@@ -490,13 +525,50 @@ export class GameController {
     await delay(0.55); // let players read the reveal
   }
 
+  /** Player p's hidden (number 0) pick, waiting to be revealed/placed. */
   private findHiddenPick(p: number): CardEntry | undefined {
-    for (const entry of this.cards.values()) {
-      if (entry.zone.kind === "pick" && entry.zone.player === p && entry.view.card.number === 0) {
-        return entry;
+    return this.hiddenPicks.get(p);
+  }
+
+  /**
+   * Safety net, run after each log batch: remove views whose card no longer
+   * exists anywhere in the mirrored state (board, hands, face-down picks).
+   * If the hidden-card bookkeeping ever drifts (dupes, stale placeholders),
+   * this guarantees nothing is left frozen on the table — worst case the next
+   * log item materializes a fresh view.
+   */
+  private pruneStaleCards() {
+    const G = this.G!;
+    const alive = new Set<number>();
+    const keep = (card: Card | null | undefined) => card && card.number > 0 && alive.add(card.number);
+    for (const row of G.rows) {
+      row.forEach(keep);
+    }
+    for (const pl of G.players) {
+      pl.hand.forEach(keep);
+      keep(pl.faceDownCard);
+    }
+    const trackedHidden = new Set<CardEntry>(this.hiddenPicks.values());
+    for (const [key, entry] of this.cards) {
+      if (entry.view.card.number === 0) {
+        // Hidden placeholders are managed through hiddenPicks; a 0-numbered
+        // entry that is NOT a tracked pick (e.g. a placed pick that was never
+        // resolved because it sat on the board when the game ended) can only
+        // remain if it occupies a board slot.
+        if (!trackedHidden.has(entry) && entry.zone.kind !== "board") {
+          this.sceneMgr.scene.remove(entry.view.group);
+          entry.view.dispose();
+          this.cards.delete(key);
+        }
+        continue;
+      }
+      if (!alive.has(entry.view.card.number)) {
+        this.hiddenPicks.forEach((v, p) => v === entry && this.hiddenPicks.delete(p));
+        this.sceneMgr.scene.remove(entry.view.group);
+        entry.view.dispose();
+        this.cards.delete(key);
       }
     }
-    return undefined;
   }
 
   private async applyChoose(player: number, card: Card) {
@@ -510,14 +582,29 @@ export class GameController {
     }
 
     const isMe = player === this.me;
-    const known = isMe || card.number !== 0;
-    let entry = this.cards.get(card.number);
+    const hidden = !isMe && card.number === 0;
+    // Hidden opponent cards all carry number 0, so NEVER key the map by
+    // card.number here — two opponents' picks would collide. Known cards are
+    // keyed by number; hidden cards keep their synthetic offscreen key and are
+    // additionally tracked per-player in `hiddenPicks`.
+    let entry = hidden ? undefined : this.cards.get(card.number);
 
-    if (!entry && !isMe && card.number === 0) {
-      // Hidden card: take any remaining offscreen card of that player
+    if (hidden) {
+      // Take one of the player's remaining offscreen hand cards as the pick.
       entry = this.findOffscreenCard(player);
-    }
-    if (!entry) {
+      if (!entry) {
+        // Materialize a stand-in (should be rare: resync or spectator join)
+        const view = new CardView({ number: 0, points: 0 });
+        view.anim.flip = Math.PI;
+        view.anim.y = -100;
+        view.anim.x = 0;
+        view.anim.z = -80;
+        this.sceneMgr.scene.add(view.group);
+        entry = { view, zone: { kind: "offscreen" } };
+        this.cards.set(-(player * 1000 + 990), entry);
+      }
+      this.hiddenPicks.set(player, entry);
+    } else if (!entry) {
       // Materialize (should be rare)
       const view = new CardView(card);
       view.anim.flip = isMe ? 0 : Math.PI;
@@ -526,10 +613,6 @@ export class GameController {
       view.anim.z = isMe ? 26 : -80;
       this.sceneMgr.scene.add(view.group);
       entry = { view, zone: { kind: "hand", index: 0 } };
-      this.cards.set(card.number || -(player + 500), entry);
-    } else if (entry.zone.kind === "offscreen" && this.cards.has(entry.view.number)) {
-      // Re-key hidden card under 0 so the reveal can find it
-      this.cards.delete(entry.view.number);
       this.cards.set(card.number, entry);
     }
 
@@ -558,17 +641,19 @@ export class GameController {
   }
 
   private findOffscreenCard(player: number): CardEntry | undefined {
-    // Find a hidden (number 0) card belonging to the opponent
+    // Find a hidden (number 0) card belonging to the opponent — but never one
+    // that is already serving as another player's pick.
     for (const [num, entry] of this.cards) {
-      if (entry.zone.kind === "offscreen" && num <= -(player * 1000 + 1) && num > -(player * 1000 + 1000)) {
-        this.cards.delete(num);
+      if (entry.zone.kind !== "offscreen" || [...this.hiddenPicks.values()].includes(entry)) {
+        continue;
+      }
+      if (num <= -(player * 1000 + 1) && num > -(player * 1000 + 1000)) {
         return entry;
       }
     }
     // Any hidden card works as a stand-in
-    for (const [num, entry] of this.cards) {
-      if (entry.zone.kind === "offscreen" && entry.view.card.number === 0) {
-        this.cards.delete(num);
+    for (const entry of this.cards.values()) {
+      if (entry.zone.kind === "offscreen" && entry.view.card.number === 0 && ![...this.hiddenPicks.values()].includes(entry)) {
         return entry;
       }
     }
@@ -583,13 +668,43 @@ export class GameController {
       return;
     }
 
-    const entry = this.cards.get(card.number) ?? this.findHiddenPick(player);
+    let entry = this.cards.get(card.number);
+    if (entry && entry.zone.kind === "pick" && entry.zone.player === player) {
+      // The revealed pick of this player — the common case.
+    } else {
+      // Resolve (and consume) this player's hidden pick, if any.
+      const hiddenEntry = this.findHiddenPick(player);
+      if (hiddenEntry) {
+        this.hiddenPicks.delete(player);
+      }
+      if (!entry) {
+        entry = hiddenEntry;
+      }
+    }
+
     const rowCards = G.rows[row];
     const col = rowCards.length;
     const pos = boardSlot(row, Math.min(col, BOARD_COLS - 1));
     const anims: Promise<void>[] = [];
 
-    if (entry) {
+    if (!entry) {
+      // The view for this card is missing (bookkeeping drifted). Materialize
+      // it at the pick slot so the placement animation ALWAYS completes —
+      // a card must never freeze on the pick zone.
+      const view = new CardView(card);
+      const pick = pickSlot(player, G.players.length);
+      view.anim.x = pick.x;
+      view.anim.z = pick.z;
+      view.anim.y = CARD_T;
+      view.anim.flip = 0;
+      view.anim.rotZ = pick.rotZ;
+      this.sceneMgr.scene.add(view.group);
+      view.applyAnim();
+      entry = { view, zone: { kind: "pick", player } };
+      this.cards.set(card.number, entry);
+    }
+
+    {
       this.cards.delete(entry.view.number);
       this.cards.set(card.number, entry);
       if (entry.view.card.number !== card.number) {
@@ -1213,6 +1328,7 @@ export class GameController {
       entry.view.dispose();
     }
     this.cards.clear();
+    this.hiddenPicks.clear();
     this.sceneMgr.dispose();
     this.ui.dispose();
   }
