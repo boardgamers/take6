@@ -65,7 +65,20 @@ export function handSlot(i: number, count: number): SlotPos {
   };
 }
 
+/**
+ * Resting height of hand card `i`. Cards in the fan overlap slightly, so each
+ * one rests a hair higher than its left neighbor — otherwise the overlapping
+ * faces share a depth plane and z-fight. The offset is far above float16
+ * depth noise at this camera distance but far below the card thickness, so
+ * the fan still reads as a single flat row.
+ */
+export function handY(i: number): number {
+  return HAND_LIFT_Y + i * 0.03;
+}
+
 export const HAND_Z = 27.5;
+/** Base height of the player's hand fan above the table. */
+export const HAND_LIFT_Y = 1.6;
 export const BOARD_HALF_W = ((BOARD_COLS - 1) / 2) * ROW_SPACING_X + CARD_W / 2 + 2;
 export const BOARD_HALF_H = ((BOARD_ROWS - 1) / 2) * ROW_SPACING_Z + CARD_H / 2 + 2;
 

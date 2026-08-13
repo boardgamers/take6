@@ -6,7 +6,7 @@ import { ended, GameEventName, MoveName, Phase, reconstructState } from "take6-e
 import { Easing, Spring, delay, tween, tweenAsync, updateTweens } from "./anim";
 import { CARD_H, CARD_T, CARD_W, CardView, refreshCardTextures } from "./cards";
 import { logToText } from "./log-text";
-import { SceneManager, boardSlot, handSlot, pickSlot, BOARD_COLS, BOARD_ROWS } from "./scene";
+import { SceneManager, boardSlot, handSlot, handY, pickSlot, BOARD_COLS, BOARD_ROWS, HAND_LIFT_Y as HAND_LIFT } from "./scene";
 import { getTheme, onThemeChange } from "./theme";
 import { UIManager } from "./ui";
 
@@ -35,7 +35,7 @@ interface CardEntry {
   pendingCol?: number;
 }
 
-const HAND_LIFT = 1.6;
+/** Extra height while dragging — clears the whole fan stack. */
 const DRAG_LIFT = 4.2;
 
 /* ------------------------------------------------------------------ */
@@ -215,7 +215,7 @@ export class GameController {
         pl.hand.forEach((card, i) => {
           const entry = spawn(card, { kind: "hand", index: i }, true);
           const pos = handSlot(i, pl.hand.length);
-          this.flyTo(entry, pos.x, pos.z, pos.rotZ, { faceUp: true, y: HAND_LIFT, animated, zIndex: 100 + i });
+          this.flyTo(entry, pos.x, pos.z, pos.rotZ, { faceUp: true, y: handY(i), animated, zIndex: 100 + i });
         });
       } else {
         pl.hand.forEach((card, i) => {
@@ -410,7 +410,7 @@ export class GameController {
                 onUpdate: (t) => {
                   view.anim.x = THREE.MathUtils.lerp(34, pos.x, t);
                   view.anim.z = THREE.MathUtils.lerp(24, pos.z, t);
-                  view.anim.y = THREE.MathUtils.lerp(CARD_T, HAND_LIFT, t) + Math.sin(t * Math.PI) * 6;
+                  view.anim.y = THREE.MathUtils.lerp(CARD_T, handY(i), t) + Math.sin(t * Math.PI) * 6;
                   view.anim.rotZ = pos.rotZ * t;
                   view.anim.flip = Math.PI * (1 - t);
                   view.anim.scale = THREE.MathUtils.lerp(0.6, 1, t);
@@ -777,14 +777,17 @@ export class GameController {
       const pos = handSlot(i, hand.length);
       const v = entry.view;
       const sx = v.anim.x;
+      const sy = v.anim.y;
       const sz = v.anim.z;
       const sr = v.anim.rotZ;
+      const ty = handY(i);
       v.zIndex = 100 + i;
       tween({
         duration: 0.35,
         easing: Easing.easeOutCubic,
         onUpdate: (t) => {
           v.anim.x = THREE.MathUtils.lerp(sx, pos.x, t);
+          v.anim.y = THREE.MathUtils.lerp(sy, ty, t);
           v.anim.z = THREE.MathUtils.lerp(sz, pos.z, t);
           v.anim.rotZ = THREE.MathUtils.lerp(sr, pos.rotZ, t);
           v.applyAnim();
@@ -1143,10 +1146,11 @@ export class GameController {
     if (entry.zone.kind !== "hand") {
       return;
     }
-    entry.view.zIndex = 100 + entry.zone.index;
+    const index = entry.zone.index;
+    entry.view.zIndex = 100 + index;
     const G = this.G!;
     const hand = G.players[this.me!].hand;
-    const pos = handSlot(entry.zone.index, hand.length);
+    const pos = handSlot(index, hand.length);
     const v = entry.view;
     const sx = v.anim.x;
     const sy = v.anim.y;
@@ -1157,7 +1161,7 @@ export class GameController {
       easing: Easing.easeOutCubic,
       onUpdate: (t) => {
         v.anim.x = THREE.MathUtils.lerp(sx, pos.x, t);
-        v.anim.y = THREE.MathUtils.lerp(sy, HAND_LIFT, t);
+        v.anim.y = THREE.MathUtils.lerp(sy, handY(index), t);
         v.anim.z = THREE.MathUtils.lerp(sz, pos.z, t);
         v.anim.rotZ = THREE.MathUtils.lerp(sr, pos.rotZ, t);
         v.applyAnim();
@@ -1187,7 +1191,9 @@ export class GameController {
       const v = d.entry.view;
       v.anim.x = d.springX.value;
       v.anim.z = d.springZ.value;
-      v.anim.y = HAND_LIFT + DRAG_LIFT;
+      // Lift above every card in the hand fan (each card rests ~0.03 higher
+      // than its left neighbor to avoid z-fighting) plus the drag height.
+      v.anim.y = handY(d.entry.zone.kind === "hand" ? d.entry.zone.index : 0) + DRAG_LIFT;
       v.anim.rotZ = THREE.MathUtils.lerp(v.anim.rotZ, 0, 1 - Math.exp(-dt * 10));
       v.applyAnim();
     }
