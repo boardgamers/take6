@@ -7,7 +7,8 @@ import { applyHostTheme } from "./theme";
  * Launch the 3D viewer inside the element matched by `selector`.
  *
  * Same contract as the other viewers: returns an EventEmitter.
- *  - in:  "state" (GameState), "player" ({index}), "gamelog" ({start, data:{log, availableMoves}}),
+ *  - in:  "state" (GameState), "player" ({index}),
+ *         "gamelog" ({start, end?, data: {log, availableMoves}}),
  *         "preferences" ({dark?: boolean}), "replay:start", "replay:to" (index), "replay:end"
  *  - out: "move", "fetchState", "fetchLog", "ready", "addLog", "replaceLog", "replay:info",
  *         "player:clicked" ({index, name}) — the host navigates to /user/<name>
@@ -43,8 +44,25 @@ export function launch(selector: string | HTMLElement): EventEmitter {
   item.addListener("state", (G: GameState) => inner.emit("state", G));
   item.addListener("player", (data: { index: number }) => inner.emit("player", data));
   item.addListener("state:updated", () => item.emit("fetchLog", { start: 0 }));
-  item.addListener("gamelog", (logData: { start: number; data: { log: any[]; availableMoves?: any[] } }) => {
-    inner.emit("addLog", { start: logData.start, log: logData.data.log, availableMoves: logData.data.availableMoves });
+  // Contract: { start, end?, data: { log, availableMoves } } (game-server
+  // GET /:gameId/log via the wrapper's logSlice). Never throw from this
+  // handler — an exception here kills the whole event chain mid-batch.
+  item.addListener("gamelog", (logData: { start?: number; data?: { log?: unknown; availableMoves?: unknown } }) => {
+    try {
+      if (!Array.isArray(logData?.data?.log)) {
+        console.warn("take6-3d: ignoring gamelog with unexpected shape", logData);
+        item.emit("fetchState");
+        return;
+      }
+      inner.emit("addLog", {
+        start: logData.start ?? 0,
+        log: logData.data.log as any[],
+        availableMoves: Array.isArray(logData.data.availableMoves) ? logData.data.availableMoves : undefined
+      });
+    } catch (err) {
+      console.warn("take6-3d: error while handling gamelog", err);
+      item.emit("fetchState");
+    }
   });
   item.addListener("replay:start", () => inner.emit("replayStart"));
   item.addListener("replay:to", (to: number) => inner.emit("replayTo", to));
