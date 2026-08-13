@@ -10,7 +10,14 @@ import launch from "./launch";
 export function launchSelfContained(selector: string | HTMLElement = "#app", numPlayers = 6) {
   const emitter = launch(selector);
 
-  let gameState = setup(numPlayers, {});
+  // Dev/demo shortcut: ?points=2&handSize=2 shortens the game (handy to reach
+  // the end screen quickly when testing locally).
+  const params = new URLSearchParams(location.search);
+  const points = Number(params.get("points"));
+  const handSize = Number(params.get("handSize"));
+  const options = { ...(points > 0 ? { points } : null), ...(handSize > 0 ? { handSize } : null) };
+
+  let gameState = setup(numPlayers, options);
   for (let i = 0; i < gameState.players.length; i++) {
     gameState.players[i].name = i === 0 ? "You" : `AI ${i}`;
   }
@@ -32,18 +39,30 @@ export function launchSelfContained(selector: string | HTMLElement = "#app", num
     setTimeout(() => emitter.emit("gamelog", payload), delayMs);
   }
 
+  let aiRunning = false;
+
   function runAI(start: number) {
-    // Let each AI move resolve one at a time so the player can follow along
+    // Only one AI chain at a time — a second chain would interleave duplicate
+    // publishes and corrupt the viewer's log queue. If a chain is already
+    // scheduled, it will see the latest gameState on its next step.
+    if (aiRunning) {
+      return;
+    }
+    aiRunning = true;
+    // Let each AI move resolve one at a time so the player can follow along.
+    // The pause between steps must exceed the viewer's per-item animation time
+    // (~0.5s choose / ~0.6s place) or the human's place phase can be skipped.
     const step = () => {
       const idx = gameState.players.findIndex((pl) => pl.isAI && pl.availableMoves);
       if (idx === -1) {
+        aiRunning = false;
         publish(start);
         return;
       }
       gameState = execMove(gameState, randomMove(idx), idx);
       publish(start);
       start = gameState.log.length;
-      setTimeout(step, 350 + Math.random() * 400);
+      setTimeout(step, 1200);
     };
     setTimeout(step, 400);
   }
@@ -65,10 +84,17 @@ export function launchSelfContained(selector: string | HTMLElement = "#app", num
     } catch (err) {
       console.error("Illegal move rejected", err);
       publish(gameState.log.length); // resync
+      // An AI may still be waiting for its turn (e.g. the player clicked while
+      // an AI move was being animated); resume the chain so the game proceeds.
+      runAI(gameState.log.length);
       return;
     }
     publish(start);
-    runAI(gameState.log.length);
+    // Let the viewer animate the player's move before the AI answers. The
+    // 3D viewer applies log items with animations (~1s per batch), and the
+    // AI must not resolve the round before the human has had a chance to
+    // see their own staged card and (if lowest) place it.
+    setTimeout(() => runAI(gameState.log.length), 2500);
   });
 
   emitter.on("fetchState", () => {

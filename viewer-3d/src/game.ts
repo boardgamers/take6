@@ -102,6 +102,9 @@ export class GameController {
     window.addEventListener("resize", this.onResize);
     this.onResize();
     this.renderer_loop();
+
+    // Testing / debugging hook
+    (window as any).__take6ctrl = this;
   }
 
   /* --------------------------- wiring ---------------------------- */
@@ -1286,6 +1289,27 @@ export class GameController {
 
   private sendMove(move: Move) {
     this.emitter.emit("move", cloneDeep(move));
+  }
+
+  /* --------------------------- testing ---------------------------- */
+
+  /** Internal snapshot, exposed for tests/debugging (window.__take6ctrl). */
+  debugState() {
+    const G = this.G;
+    if (!G) {
+      return null;
+    }
+    return {
+      logLength: G.log.length,
+      round: G.round,
+      phase: G.phase,
+      me: this.me,
+      hands: G.players.map((pl) => pl.hand.length),
+      faceDown: G.players.map((pl) => !!pl.faceDownCard),
+      points: G.players.map((pl) => pl.points),
+      myMoves: this.myMoves(),
+      myHandCards: G.players[this.me!].hand.map((c) => c.number)
+    };
   }
 
   /* --------------------------- frame loop ---------------------------- */
