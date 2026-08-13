@@ -33,19 +33,20 @@ export function boardSlot(row: number, col: number): SlotPos {
   };
 }
 
-/** World position of the slot where a player's chosen card sits before reveal. */
+/**
+ * World position of the slot where a player's chosen card sits before reveal.
+ * Arc ABOVE the board (far edge), fanned like a stadium: staying over the
+ * board area would hide the rows (especially a long closest row).
+ */
 export function pickSlot(index: number, total: number): SlotPos {
-  // Arc across the bottom of the table, main player centered in front of their hand.
-  const spread = Math.min(total - 1, 7);
-  const start = -spread * 0.5;
-  const i = index - start;
-  const t = total > 1 ? i / (total - 1) : 0.5;
-  const angle = (t - 0.5) * Math.min(1.6, 0.35 + total * 0.14);
-  const radius = 34;
+  const maxX = 16; // stays over the felt, short of the table's side edges
+  const t = total > 1 ? index / (total - 1) : 0.5;
+  const x = (t - 0.5) * 2 * Math.min(maxX, total * 3.2);
+  const arc = x / maxX;
   return {
-    x: Math.sin(angle) * radius,
-    z: 26 - Math.cos(angle) * radius * 0.32,
-    rotZ: -angle * 0.35
+    x,
+    z: -21.2 + arc * arc * 1.9, // slightly bulged toward the board's far edge
+    rotZ: arc * 0.18
   };
 }
 

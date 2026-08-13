@@ -3,7 +3,7 @@ import { EventEmitter } from "events";
 import { cloneDeep } from "lodash";
 import type { AvailableMoves, Card, GameState, LogItem, Move } from "take6-engine";
 import { ended, GameEventName, MoveName, Phase, reconstructState } from "take6-engine";
-import { Easing, Spring, delay, tween, tweenAsync, updateTweens } from "./anim";
+import { Easing, Spring, delay, tweenView, tweenViewAsync, updateTweens } from "./anim";
 import { CARD_H, CARD_T, CARD_W, CardView, refreshCardTextures } from "./cards";
 import { logToText } from "./log-text";
 import { SceneManager, boardSlot, handSlot, handY, pickSlot, BOARD_COLS, BOARD_ROWS, HAND_LIFT_Y as HAND_LIFT } from "./scene";
@@ -31,8 +31,6 @@ type Zone =
 interface CardEntry {
   view: CardView;
   zone: Zone;
-  /** Index into the upcoming board row while placement is being animated. */
-  pendingCol?: number;
 }
 
 /** Extra height while dragging — clears the whole fan stack. */
@@ -233,10 +231,19 @@ export class GameController {
           this.flyTo(entry, pos.x, pos.z, pos.rotZ, { faceUp: true, y: handY(i), animated, zIndex: 100 + i });
         });
       } else {
-        pl.hand.forEach((card, i) => {
-          const entry = spawn(card, { kind: "offscreen" }, false);
-          this.flyTo(entry, 0, -80 - p * 4, 0, { faceUp: false, y: CARD_T, animated: false, scale: 0.01 });
-        });
+        // Opponent hands are hidden: one shared face-down placeholder per
+        // player (keyed by synthetic negative id, like applyRoundStart).
+        const key = -(p * 1000 + 1);
+        let entry = this.cards.get(key);
+        if (!entry) {
+          const view = new CardView({ number: 0, points: 0 });
+          entry = { view, zone: { kind: "offscreen" } };
+          this.cards.set(key, entry);
+          this.sceneMgr.scene.add(view.group);
+        } else {
+          entry.zone = { kind: "offscreen" };
+        }
+        this.flyTo(entry, 0, -80 - p * 4, 0, { faceUp: false, y: CARD_T, animated: false, scale: 0.01 });
       }
       if (pl.faceDownCard) {
         const faceUp = G.phase === Phase.PlaceCard && pl.faceDownCard.number !== 0;
@@ -388,7 +395,7 @@ export class GameController {
       this.cards.set(card.number, entry);
       drops.push(
         (async () => {
-          await tweenAsync({
+          await tweenViewAsync(view, {
             duration: 0.5,
             delay: r * 0.09,
             easing: Easing.bounceOut,
@@ -423,7 +430,7 @@ export class GameController {
           deals.push(
             (async () => {
               await delay(0.15 + i * 0.07);
-              await tweenAsync({
+              await tweenViewAsync(view, {
                 duration: 0.55,
                 easing: Easing.easeOutCubic,
                 onUpdate: (t) => {
@@ -509,7 +516,7 @@ export class GameController {
       flips.push(
         (async () => {
           await delay(p * 0.05);
-          await tweenAsync({
+          await tweenViewAsync(view, {
             duration: 0.55,
             easing: Easing.easeInOutCubic,
             onUpdate: (t) => {
@@ -556,11 +563,11 @@ export class GameController {
     const trackedHidden = new Set<CardEntry>(this.hiddenPicks.values());
     for (const [key, entry] of this.cards) {
       if (entry.view.card.number === 0) {
-        // Hidden placeholders are managed through hiddenPicks; a 0-numbered
-        // entry that is NOT a tracked pick (e.g. a placed pick that was never
-        // resolved because it sat on the board when the game ended) can only
-        // remain if it occupies a board slot.
-        if (!trackedHidden.has(entry) && entry.zone.kind !== "board") {
+        // Hidden placeholders are managed through hiddenPicks (pick slots)
+        // and the offscreen hand stand-ins; a 0-numbered entry anywhere else
+        // (e.g. a placed pick that was never resolved because the game ended
+        // mid-reveal) can only remain if it occupies a board slot.
+        if (!trackedHidden.has(entry) && entry.zone.kind !== "board" && entry.zone.kind !== "offscreen") {
           this.sceneMgr.scene.remove(entry.view.group);
           entry.view.dispose();
           this.cards.delete(key);
@@ -627,7 +634,7 @@ export class GameController {
     view.zIndex = 40 + player;
 
     const fromY = view.anim.y;
-    await tweenAsync({
+    await tweenViewAsync(view, {
       duration: 0.5,
       easing: Easing.easeInOutCubic,
       onUpdate: (t) => {
@@ -689,7 +696,8 @@ export class GameController {
 
     const rowCards = G.rows[row];
     const col = rowCards.length;
-    const pos = boardSlot(row, Math.min(col, BOARD_COLS - 1));
+    // On a take the row cards are about to fly away — land on slot 0 directly.
+    const pos = boardSlot(row, replace ? 0 : Math.min(col, BOARD_COLS - 1));
     const anims: Promise<void>[] = [];
 
     if (!entry) {
@@ -715,14 +723,13 @@ export class GameController {
       if (entry.view.card.number !== card.number) {
         entry.view.setCard(card);
       }
-      entry.zone = { kind: "board", row, col };
-      entry.pendingCol = col;
+      entry.zone = { kind: "board", row, col: replace ? 0 : col };
       const view = entry.view;
-      view.zIndex = 60 + col;
+      view.zIndex = 60 + (replace ? 0 : col);
       const startX = view.anim.x;
       const startZ = view.anim.z;
       anims.push(
-        tweenAsync({
+        tweenViewAsync(view, {
           duration: 0.6,
           easing: Easing.easeInOutCubic,
           onUpdate: (t) => {
@@ -748,7 +755,7 @@ export class GameController {
       const sx = v.anim.x;
       const sz = v.anim.z;
       anims.push(
-        tweenAsync({
+        tweenViewAsync(v, {
           duration: 0.45,
           easing: Easing.easeInOutCubic,
           onUpdate: (t) => {
@@ -778,23 +785,8 @@ export class GameController {
       });
       await Promise.all(steal);
 
-      // The placed card becomes the new row starter (slot 0)
-      if (entry) {
-        const target = boardSlot(row, 0);
-        const v = entry.view;
-        const sx = v.anim.x;
-        const sz = v.anim.z;
-        entry.zone = { kind: "board", row, col: 0 };
-        await tweenAsync({
-          duration: 0.4,
-          easing: Easing.easeOutCubic,
-          onUpdate: (t) => {
-            v.anim.x = THREE.MathUtils.lerp(sx, target.x, t);
-            v.anim.z = THREE.MathUtils.lerp(sz, target.z, t);
-            v.applyAnim();
-          }
-        });
-      }
+      // The placed card already landed on slot 0 (see above).
+      entry.zone = { kind: "board", row, col: 0 };
       // Small pause to let the "take" sink in
       await delay(0.35);
     }
@@ -818,7 +810,7 @@ export class GameController {
     const sx = view.anim.x;
     const sy = view.anim.y;
     const sz = view.anim.z;
-    return tweenAsync({
+    return tweenViewAsync(view, {
       duration: 0.55,
       delay: delayS,
       easing: Easing.easeInCubic,
@@ -867,7 +859,7 @@ export class GameController {
       view.applyAnim();
       return;
     }
-    tween({
+    tweenView(view, {
       duration: 0.5,
       easing: Easing.easeInOutCubic,
       onUpdate: (t) => {
@@ -902,7 +894,7 @@ export class GameController {
       const sr = v.anim.rotZ;
       const ty = handY(i);
       v.zIndex = 100 + i;
-      tween({
+      tweenView(v, {
         duration: 0.35,
         easing: Easing.easeOutCubic,
         onUpdate: (t) => {
@@ -1177,14 +1169,14 @@ export class GameController {
     if (this.hoverEntry && this.hoverEntry !== entry) {
       const e = this.hoverEntry;
       const from = e.view.lift;
-      tween({ duration: 0.18, onUpdate: (t) => ((e.view.lift = THREE.MathUtils.lerp(from, 0, t)), e.view.applyAnim()) });
+      tweenView(e.view, { duration: 0.18, onUpdate: (t) => ((e.view.lift = THREE.MathUtils.lerp(from, 0, t)), e.view.applyAnim()) });
       this.hoverEntry = null;
     }
     if (entry && this.hoverEntry !== entry) {
       this.hoverEntry = entry;
       const e = entry;
       const from = e.view.lift;
-      tween({ duration: 0.18, easing: Easing.easeOutQuad, onUpdate: (t) => ((e.view.lift = THREE.MathUtils.lerp(from, 1.4, t)), e.view.applyAnim()) });
+      tweenView(e.view, { duration: 0.18, easing: Easing.easeOutQuad, onUpdate: (t) => ((e.view.lift = THREE.MathUtils.lerp(from, 1.4, t)), e.view.applyAnim()) });
     }
     this.sceneMgr.renderer.domElement.style.cursor = entry ? "pointer" : "default";
   }
@@ -1224,11 +1216,10 @@ export class GameController {
         this.resetDraggedCard(d.entry, false);
         return;
       }
-      // Dropped onto the pick zone?
+      // Dropped onto the pick zone (above the board)?
       const pick = pickSlot(me, G.players.length);
       const dist = Math.hypot(d.target.x - pick.x, d.target.z - pick.z);
-      const pickRadius = 9;
-      if (dist < pickRadius || d.target.z < 14) {
+      if (dist < 11 || d.target.z < -18) {
         this.sendMove({ name: MoveName.ChooseCard, data: { number: card.number, points: card.points } });
       }
       this.resetDraggedCard(d.entry, true);
@@ -1249,7 +1240,7 @@ export class GameController {
     const sy = v.anim.y;
     const sz = v.anim.z;
     const sr = v.anim.rotZ;
-    tween({
+    tweenView(v, {
       duration: 0.35,
       easing: Easing.easeOutCubic,
       onUpdate: (t) => {
@@ -1276,7 +1267,7 @@ export class GameController {
     const sy = v.anim.y;
     const sz = v.anim.z;
     const sr = v.anim.rotZ;
-    tween({
+    tweenView(v, {
       duration: animate ? 0.4 : 0.2,
       easing: Easing.easeOutCubic,
       onUpdate: (t) => {

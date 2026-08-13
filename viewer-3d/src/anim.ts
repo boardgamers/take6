@@ -61,6 +61,58 @@ interface ActiveTween extends Required<Pick<TweenOptions, "duration" | "delay" |
 const activeTweens: ActiveTween[] = [];
 let time = 0;
 
+/**
+ * Cancel every active tween whose onUpdate closure writes the given view.
+ * Used to guarantee at most one flight animation per card: without it a
+ * stale tween (e.g. from an interrupted previous animation) keeps running
+ * after a newer one completes and drags the card back to its old target.
+ */
+export function cancelTweensOf(view: object) {
+  for (const tw of activeTweens) {
+    if (!tw.done && touchedViews.get(tw) === view) {
+      tw.done = true;
+    }
+  }
+}
+
+/** Registry tween → view it animates (see `tweenView`). */
+const touchedViews = new WeakMap<ActiveTween, object>();
+
+/**
+ * Start a tween that animates the given view, cancelling any still-active
+ * tween of the same view first. All card-movement animations in the viewer
+ * go through this so a card never has two competing flights.
+ */
+
+export function tweenView(view: object, options: TweenOptions): ActiveTween {
+  cancelTweensOf(view);
+  const tw = tween(options);
+  if (options.onUpdate) {
+    touchedViews.set(tw, view);
+  }
+  return tw;
+}
+
+/** Like `tweenView`, but the returned promise resolves even if a newer tween
+ * of the same view supersedes this one (the flight was taken over). */
+export function tweenViewAsync(view: object, options: TweenOptions): Promise<void> {
+  return new Promise((resolve) => {
+    tweenView(view, {
+      ...options,
+      onUpdate: (t) => {
+        options.onUpdate?.(t);
+        if (t >= 1) {
+          resolve();
+        }
+      },
+      onComplete: () => {
+        options.onComplete?.();
+        resolve();
+      }
+    });
+  });
+}
+
 export function tween(options: TweenOptions): ActiveTween {
   const tw: ActiveTween = {
     duration: options.duration ?? 0.5,
@@ -114,6 +166,7 @@ export function flushTweens(tag: string) {
 }
 
 /** Advance all tweens. Call once per frame with the delta in seconds. */
+
 export function updateTweens(dt: number) {
   time += dt;
   for (let i = activeTweens.length - 1; i >= 0; i--) {
