@@ -416,8 +416,27 @@ export class SceneManager {
   }
 
   dispose() {
+    // Per-scene geometries + materials. Card views dispose themselves
+    // (GameController); the cached card geometry and card/edge textures are
+    // intentionally shared across launches and stay alive.
+    const disposeMesh = (mesh: THREE.Mesh) => {
+      mesh.geometry.dispose();
+      const mats = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
+      for (const mat of mats) {
+        // Shared / cached textures (felt, wood) are kept for the next launch.
+        mat.dispose();
+      }
+    };
+    disposeMesh(this.ground);
+    disposeMesh(this.rim);
+    disposeMesh(this.table);
+    for (const mesh of this.slotMeshes) {
+      disposeMesh(mesh);
+    }
     this.renderer.dispose();
-    this.container.removeChild(this.renderer.domElement);
+    if (this.renderer.domElement.parentElement === this.container) {
+      this.container.removeChild(this.renderer.domElement);
+    }
   }
 }
 

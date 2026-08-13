@@ -138,6 +138,49 @@ function drawBullPoints(ctx: CanvasRenderingContext2D, points: number, w: number
 
 const textureCache = new Map<string, THREE.CanvasTexture>();
 
+/** Textures kept across theme changes (per card number + back, per theme). */
+const persistentTextures = new Set<THREE.Texture>();
+let texturePrimedTheme: string | null = null;
+
+/** Cache-backed textures are safe to hold onto; anything else can be disposed. */
+function isCachedTexture(texture: THREE.Texture): boolean {
+  return persistentTextures.has(texture);
+}
+
+/**
+ * Pre-generate (and cache) every face texture + the back texture for the
+ * current theme, so hidden cards materialize without a hitch and theme
+ * switches never rebuild textures per-view. Points mirror the engine's
+ * card rules (55 -> 7, doubles -> 5, multiples of 10 -> 3, of 5 -> 2).
+ */
+function primeTextureCache() {
+  const theme = getTheme();
+  if (texturePrimedTheme === theme.name) {
+    return;
+  }
+  texturePrimedTheme = theme.name;
+  persistentTextures.add(cardBackTexture());
+  for (let number = 1; number <= 104; number++) {
+    persistentTextures.add(cardFaceTexture({ number, points: cardPoints(number) }));
+  }
+}
+
+function cardPoints(number: number): number {
+  if (number === 55) {
+    return 7;
+  }
+  if (number % 11 === 0) {
+    return 5;
+  }
+  if (number % 10 === 0) {
+    return 3;
+  }
+  if (number % 5 === 0) {
+    return 2;
+  }
+  return 1;
+}
+
 export function cardFaceTexture(card: Card): THREE.CanvasTexture {
   const theme = getTheme();
   const key = `face-${theme.name}-${card.number}`;
@@ -335,6 +378,9 @@ export class CardView {
   constructor(public card: Card) {
     this.number = card.number;
     this.points = card.points;
+    // Make sure the texture set for the active theme is generated & cached,
+    // so revealed hidden cards never need a synchronous texture build.
+    primeTextureCache();
     this.frontMaterial = new THREE.MeshStandardMaterial({
       map: cardFaceTexture(card),
       roughness: 0.55,
@@ -365,13 +411,38 @@ export class CardView {
   setCard(card: Card) {
     this.card = card;
     this.points = card.points;
-    this.frontMaterial.map = cardFaceTexture(card);
-    this.frontMaterial.needsUpdate = true;
+    this.swapMap(this.frontMaterial, cardFaceTexture(card));
   }
 
   refreshBack() {
-    this.backMaterial.map = cardBackTexture();
-    this.backMaterial.needsUpdate = true;
+    this.swapMap(this.backMaterial, cardBackTexture());
+  }
+
+  /** Replace a material's texture, disposing the old per-view texture (shared cache entries are kept). */
+  private swapMap(material: THREE.MeshStandardMaterial, texture: THREE.Texture) {
+    const old = material.map;
+    material.map = texture;
+    material.needsUpdate = true;
+    if (old && old !== texture && !isCachedTexture(old)) {
+      old.dispose();
+    }
+  }
+
+  /** Release per-view GPU resources (textures, materials, back geometry). */
+  dispose() {
+    this.disposeMap(this.frontMaterial);
+    this.disposeMap(this.backMaterial);
+    this.frontMaterial.dispose();
+    this.backMaterial.dispose();
+    this.backPlane.geometry.dispose();
+  }
+
+  private disposeMap(material: THREE.MeshStandardMaterial) {
+    const map = material.map;
+    if (map && !isCachedTexture(map)) {
+      map.dispose();
+    }
+    material.map = null;
   }
 
   get faceUp() {
@@ -388,10 +459,13 @@ export class CardView {
   }
 }
 
-/** Rebuild textures when the theme switches. */
+/**
+ * Rebuild textures when the theme switches. The whole texture set is cached
+ * per theme (see primeTextureCache), so this just swaps in the cached maps.
+ */
 export function refreshCardTextures(cards: Iterable<CardView>) {
+  primeTextureCache();
   for (const card of cards) {
-    card.setCard(card.card);
     card.refreshBack();
   }
 }

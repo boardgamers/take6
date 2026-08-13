@@ -72,6 +72,7 @@ export class GameController {
   private disposed = false;
   private portraitBias = 0;
   private stageAnim = new Map<number, number>(); // player -> pulse value
+  private unsubTheme: (() => void) | null = null;
 
   constructor(container: HTMLElement, options: GameControllerOptions) {
     this.emitter = options.emitter;
@@ -82,7 +83,7 @@ export class GameController {
     };
     this.sceneMgr = new SceneManager(this.ui.root);
 
-    onThemeChange(() => {
+    this.unsubTheme = onThemeChange(() => {
       refreshCardTextures([...this.cards.values()].map((c) => c.view));
     });
 
@@ -173,6 +174,7 @@ export class GameController {
     for (const [num, entry] of this.cards) {
       if (!alive.has(num)) {
         this.sceneMgr.scene.remove(entry.view.group);
+        entry.view.dispose();
         this.cards.delete(num);
       }
     }
@@ -712,6 +714,7 @@ export class GameController {
       },
       onComplete: () => {
         this.sceneMgr.scene.remove(view.group);
+        view.dispose();
       }
     });
   }
@@ -885,6 +888,14 @@ export class GameController {
     el.addEventListener("pointermove", this.onPointerMove);
     el.addEventListener("pointerup", this.onPointerUp);
     el.addEventListener("pointercancel", this.onPointerUp);
+  }
+
+  private unbindInput() {
+    const el = this.sceneMgr.renderer.domElement;
+    el.removeEventListener("pointerdown", this.onPointerDown);
+    el.removeEventListener("pointermove", this.onPointerMove);
+    el.removeEventListener("pointerup", this.onPointerUp);
+    el.removeEventListener("pointercancel", this.onPointerUp);
   }
 
   private myMoves(): AvailableMoves | null {
@@ -1204,6 +1215,14 @@ export class GameController {
   dispose() {
     this.disposed = true;
     window.removeEventListener("resize", this.onResize);
+    this.unsubTheme?.();
+    this.unsubTheme = null;
+    this.unbindInput();
+    for (const entry of this.cards.values()) {
+      this.sceneMgr.scene.remove(entry.view.group);
+      entry.view.dispose();
+    }
+    this.cards.clear();
     this.sceneMgr.dispose();
     this.ui.dispose();
   }
