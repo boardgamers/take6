@@ -11,8 +11,14 @@ import { applyHostTheme } from "./theme";
  *         "gamelog" (either {log, availableMoves} after a fetchLog, or
  *         {start, end?, data: {log, availableMoves}} after a move),
  *         "preferences" ({dark?: boolean}), "replay:start", "replay:to" (index), "replay:end"
- *  - out: "move", "fetchState", "fetchLog", "ready", "addLog", "replaceLog", "replay:info",
+ *  - out: "move", "fetchState", "fetchLog", "ready", "addLog" (string[]),
+ *         "replaceLog" (string[]), "replay:info",
  *         "player:clicked" ({index, name}) — the host navigates to /user/<name>
+ *
+ * Inner-emitter naming: inbound game-log slices arrive on the inner emitter as
+ * "addLog" ({start, log, availableMoves}) and are consumed by GameController.
+ * Outbound text lines for the host sidebar use the "uplink:" prefix
+ * ("uplink:addLog") so the forwarder below never re-fires for inbound objects.
  */
 export function launch(selector: string | HTMLElement): EventEmitter {
   const container =
@@ -34,7 +40,7 @@ export function launch(selector: string | HTMLElement): EventEmitter {
   // Requests toward the host
   inner.on("fetchState", () => item.emit("fetchState"));
   inner.on("ready", () => item.emit("ready"));
-  inner.on("addLog", (lines: string[]) => item.emit("addLog", lines));
+  inner.on("uplink:addLog", (lines: string[]) => item.emit("addLog", lines));
   inner.on("replaceLog", (lines: string[]) => item.emit("replaceLog", lines));
   inner.on("player:clicked", (data: { index: number; name: string }) => item.emit("player:clicked", data));
   inner.on("replay:info", (info: { start: number; current: number; end: number }) =>

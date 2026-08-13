@@ -272,8 +272,8 @@ export class GameController {
     if (data.availableMoves) {
       this.pendingAvailableMoves = data.availableMoves;
     }
-    // Never nest applyLoop calls: emitting "addLog" from inside applyLoop can
-    // synchronously re-enter applyLog (host may immediately answer with a new
+    // Never nest applyLoop calls: emitting "uplink:addLog" from inside applyLoop
+    // can synchronously re-enter applyLog (host may immediately answer with a new
     // gamelog). If a batch arrives mid-animation, the running loop picks it up.
     if (this.applying) {
       return;
@@ -291,7 +291,7 @@ export class GameController {
         await this.applyLogItem(item);
         if (this.G) {
           this.G.log.push(item);
-          this.emitter.emit("addLog", logToText(this.G, item, this.me));
+          this.emitter.emit("uplink:addLog", logToText(this.G, item, this.me));
         }
       }
       this.finishLogApplication();
