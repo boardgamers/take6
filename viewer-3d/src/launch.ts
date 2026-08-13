@@ -8,7 +8,8 @@ import { applyHostTheme } from "./theme";
  *
  * Same contract as the other viewers: returns an EventEmitter.
  *  - in:  "state" (GameState), "player" ({index}),
- *         "gamelog" ({start, end?, data: {log, availableMoves}}),
+ *         "gamelog" (either {log, availableMoves} after a fetchLog, or
+ *         {start, end?, data: {log, availableMoves}} after a move),
  *         "preferences" ({dark?: boolean}), "replay:start", "replay:to" (index), "replay:end"
  *  - out: "move", "fetchState", "fetchLog", "ready", "addLog", "replaceLog", "replay:info",
  *         "player:clicked" ({index, name}) — the host navigates to /user/<name>
@@ -44,9 +45,17 @@ export function launch(selector: string | HTMLElement): EventEmitter {
   item.addListener("state", (G: GameState) => inner.emit("state", G));
   item.addListener("player", (data: { index: number }) => inner.emit("player", data));
   item.addListener("state:updated", () => item.emit("fetchLog", { start: 0 }));
-  item.addListener("gamelog", (logData: { start: number; data: { log: any[]; availableMoves?: any[] } }) => {
-    inner.emit("addLog", { start: logData.start, log: logData.data.log, availableMoves: logData.data.availableMoves });
-  });
+  item.addListener(
+    "gamelog",
+    (logData: { start?: number; log?: any[]; availableMoves?: any[]; data?: { log: any[]; availableMoves?: any[] } }) => {
+      // The platform sends the log slice two ways: bare { log, availableMoves } after a
+      // fetchLog (StartedGame unwraps the body via `.then((r) => r.data)`), or wrapped
+      // { start, data: { log, availableMoves } } after a move.
+      const log = logData.log ?? logData.data?.log;
+      const availableMoves = logData.availableMoves ?? logData.data?.availableMoves;
+      inner.emit("addLog", { start: logData.start ?? 0, log, availableMoves });
+    }
+  );
   item.addListener("replay:start", () => inner.emit("replayStart"));
   item.addListener("replay:to", (to: number) => inner.emit("replayTo", to));
   item.addListener("replay:end", () => inner.emit("replayEnd"));
