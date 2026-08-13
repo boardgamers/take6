@@ -71,7 +71,6 @@ export class GameController {
   private clock = new THREE.Clock();
   private disposed = false;
   private portraitBias = 0;
-  private stageAnim = new Map<number, number>(); // player -> pulse value
   private unsubTheme: (() => void) | null = null;
 
   constructor(container: HTMLElement, options: GameControllerOptions) {
@@ -540,7 +539,6 @@ export class GameController {
     view.zIndex = 40 + player;
 
     const fromY = view.anim.y;
-    const faceDown = !known || !isMe;
     await tweenAsync({
       duration: 0.5,
       easing: Easing.easeInOutCubic,
@@ -550,8 +548,7 @@ export class GameController {
         view.anim.y = THREE.MathUtils.lerp(fromY, CARD_T, t) + Math.sin(t * Math.PI) * 4;
         view.anim.rotZ = THREE.MathUtils.lerp(view.anim.rotZ, pos.rotZ, t);
         // Own card: flip to face down; opponent card: stays face down
-        const targetFlip = faceDown ? Math.PI : Math.PI;
-        view.anim.flip = THREE.MathUtils.lerp(view.anim.flip, targetFlip, Math.min(t * 1.6, 1));
+        view.anim.flip = THREE.MathUtils.lerp(view.anim.flip, Math.PI, Math.min(t * 1.6, 1));
         view.applyAnim();
       }
     });
@@ -1193,19 +1190,6 @@ export class GameController {
       v.anim.y = HAND_LIFT + DRAG_LIFT;
       v.anim.rotZ = THREE.MathUtils.lerp(v.anim.rotZ, 0, 1 - Math.exp(-dt * 10));
       v.applyAnim();
-    }
-
-    // Idle float for staged pick cards of thinking players (subtle life)
-    const t = this.clock.elapsedTime;
-    for (const entry of this.cards.values()) {
-      if (entry.zone.kind === "pick" && !this.drag) {
-        const pulse = this.stageAnim.get(entry.zone.player) ?? 0;
-        if (pulse > 0) {
-          const v = entry.view;
-          v.anim.y = CARD_T + Math.sin(t * 3) * 0.12 * pulse;
-          v.applyAnim();
-        }
-      }
     }
 
     this.sceneMgr.updateCamera(dt, this.portraitBias);

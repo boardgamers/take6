@@ -32,18 +32,6 @@ function roundedRectShape(w: number, h: number, r: number): THREE.Shape {
   return s;
 }
 
-/** Normalize a geometry's UVs to its XY bounding box (0..1). */
-function remapUV(geo: THREE.BufferGeometry) {
-  geo.computeBoundingBox();
-  const bb = geo.boundingBox!;
-  const size = new THREE.Vector3().subVectors(bb.max, bb.min);
-  const uv = geo.attributes.uv as THREE.BufferAttribute;
-  const pos = geo.attributes.position as THREE.BufferAttribute;
-  for (let i = 0; i < uv.count; i++) {
-    uv.setXY(i, (pos.getX(i) - bb.min.x) / size.x, (pos.getY(i) - bb.min.y) / size.y);
-  }
-}
-
 export function cardGeometry(): THREE.BufferGeometry {
   const key = "card";
   if (!geometryCache.has(key)) {
@@ -399,7 +387,6 @@ export class CardView {
 
     // Thin back face plane (avoids needing a second full extrusion).
     const backGeo = new THREE.ShapeGeometry(roundedRectShape(CARD_W, CARD_H, 0.55), 6);
-    remapUV(backGeo);
     this.backPlane = new THREE.Mesh(backGeo, this.backMaterial);
     this.backPlane.rotation.y = Math.PI;
     this.backPlane.position.z = -CARD_T / 2 - 0.046;
