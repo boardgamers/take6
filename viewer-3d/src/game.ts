@@ -2,7 +2,7 @@ import * as THREE from "three";
 import { EventEmitter } from "events";
 import { cloneDeep } from "lodash";
 import type { AvailableMoves, Card, GameState, LogItem, Move } from "take6-engine";
-import { GameEventName, MoveName, Phase, reconstructState } from "take6-engine";
+import { ended, GameEventName, MoveName, Phase, reconstructState } from "take6-engine";
 import { Easing, Spring, delay, tween, tweenAsync, updateTweens } from "./anim";
 import { CARD_H, CARD_T, CARD_W, CardView, refreshCardTextures } from "./cards";
 import { logToText } from "./log-text";
@@ -293,6 +293,7 @@ export class GameController {
     this.ui.updatePlayers(this.G, this.me);
     this.updateStatus();
     this.emitter.emit("state:updated");
+    this.checkEnd();
   }
 
   private async applyLogItem(item: LogItem) {
@@ -814,13 +815,13 @@ export class GameController {
     }
   }
 
+  /** Game-over check mirrors the engine's canonical `ended()`. */
   private checkEnd() {
     const G = this.G;
     if (!G) {
       return;
     }
-    const over = G.players.every((pl) => !pl.faceDownCard && pl.hand.length === 0) && G.players.some((pl) => pl.points >= (G.options.points ?? 66));
-    if (over) {
+    if (ended(G)) {
       this.ui.setStatus(null);
       this.ui.showEndScreen(G, this.me);
     }
