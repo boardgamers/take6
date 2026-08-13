@@ -77,6 +77,8 @@ export function launchSelfContained(selector: string | HTMLElement = "#app", num
 
   emitter.emit("player", { index: ME });
   emitter.emit("state", stripSecret(cloneDeep(gameState), ME));
+
+  return emitter;
 }
 
 export default launchSelfContained;

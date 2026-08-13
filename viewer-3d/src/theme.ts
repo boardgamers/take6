@@ -110,6 +110,15 @@ export function toggleThemeOverride() {
   setThemeOverride(current.name === "dark" ? "light" : "dark");
 }
 
+/**
+ * Apply an explicit theme coming from the host page (e.g. the BGS `theme`
+ * postMessage or a `preferences` event carrying `{ dark: boolean }`).
+ */
+export function applyHostTheme(dark: boolean) {
+  manualOverride = null;
+  apply(dark ? themes.dark : themes.light);
+}
+
 function resolveTheme(): Theme {
   if (manualOverride) {
     return themes[manualOverride];

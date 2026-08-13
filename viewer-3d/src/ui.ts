@@ -85,6 +85,8 @@ html.dark .t6-root, .t6-root.t6-dark {
 .t6-badge .t6-pts svg { width: 11px; height: 11px; }
 .t6-badge.t6-active { border-color: var(--t6-accent); box-shadow: 0 0 0 1.5px var(--t6-accent), 0 2px 10px rgba(0,0,0,0.18); }
 .t6-badge.t6-me::after { content: ""; }
+.t6-badge.t6-clickable { pointer-events: auto; cursor: pointer; }
+.t6-badge.t6-clickable:hover { border-color: var(--t6-accent); }
 .t6-badge.t6-thinking .t6-dot { animation: t6-pulse 0.9s ease-in-out infinite; }
 @keyframes t6-pulse { 50% { opacity: 0.35; transform: scale(0.8); } }
 
@@ -163,6 +165,8 @@ export class UIManager {
   private endEl: HTMLDivElement | null = null;
   private badges: HTMLDivElement[] = [];
   private styleEl: HTMLStyleElement;
+  /** Called when a player badge is clicked (host uses it to open profiles). */
+  onPlayerClick: ((index: number) => void) | null = null;
 
   constructor(parent: HTMLElement, opts: { showThemeToggle: boolean }) {
     this.styleEl = document.createElement("style");
@@ -256,7 +260,8 @@ export class UIManager {
           return; // main player doesn't get a corner badge
         }
         const badge = document.createElement("div");
-        badge.className = "t6-badge";
+        badge.className = "t6-badge t6-clickable";
+        badge.addEventListener("click", () => this.onPlayerClick?.(i));
         this.badges[i] = badge;
         // Split players between left and right columns
         const side = i % 2 === 0 ? this.leftPlayers : this.rightPlayers;

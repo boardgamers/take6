@@ -1,13 +1,16 @@
 import { EventEmitter } from "events";
 import type { GameState, Move } from "take6-engine";
 import { GameController } from "./game";
+import { applyHostTheme } from "./theme";
 
 /**
  * Launch the 3D viewer inside the element matched by `selector`.
  *
  * Same contract as the other viewers: returns an EventEmitter.
- *  - in:  "state" (GameState), "player" ({index}), "gamelog" ({start, data:{log, availableMoves}})
- *  - out: "move", "fetchState", "fetchLog", "ready", "addLog", "replaceLog", "replay:info"
+ *  - in:  "state" (GameState), "player" ({index}), "gamelog" ({start, data:{log, availableMoves}}),
+ *         "preferences" ({dark?: boolean}), "replay:start", "replay:to" (index), "replay:end"
+ *  - out: "move", "fetchState", "fetchLog", "ready", "addLog", "replaceLog", "replay:info",
+ *         "player:clicked"
  */
 export function launch(selector: string | HTMLElement): EventEmitter {
   const container =
@@ -29,6 +32,9 @@ export function launch(selector: string | HTMLElement): EventEmitter {
   // Requests toward the host
   inner.on("fetchState", () => item.emit("fetchState"));
   inner.on("ready", () => item.emit("ready"));
+  inner.on("addLog", (lines: string[]) => item.emit("addLog", lines));
+  inner.on("replaceLog", (lines: string[]) => item.emit("replaceLog", lines));
+  inner.on("player:clicked", (data: { index: number }) => item.emit("player:clicked", data));
   inner.on("replay:info", (info: { start: number; current: number; end: number }) =>
     item.emit("replay:info", info)
   );
@@ -43,6 +49,23 @@ export function launch(selector: string | HTMLElement): EventEmitter {
   item.addListener("replay:start", () => inner.emit("replayStart"));
   item.addListener("replay:to", (to: number) => inner.emit("replayTo", to));
   item.addListener("replay:end", () => inner.emit("replayEnd"));
+
+  // Host UI preferences: the 3D viewer only cares about dark mode
+  item.addListener("preferences", (prefs: { dark?: boolean } | null) => {
+    if (prefs && typeof prefs.dark === "boolean") {
+      applyHostTheme(prefs.dark);
+    }
+  });
+
+  // The site notifies the iframe about theme changes through a raw postMessage
+  // (not re-emitted on the emitter)
+  if (typeof window !== "undefined") {
+    window.addEventListener("message", (event) => {
+      if (event.data?.type === "theme" && typeof event.data.dark === "boolean") {
+        applyHostTheme(event.data.dark);
+      }
+    });
+  }
 
   // Cleanup hook for embedders that want it
   (item as any).dispose = () => controller.dispose();

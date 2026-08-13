@@ -5,6 +5,7 @@ import type { AvailableMoves, Card, GameState, LogItem, Move } from "take6-engin
 import { GameEventName, MoveName, Phase, reconstructState } from "take6-engine";
 import { Easing, Spring, delay, tween, tweenAsync, updateTweens } from "./anim";
 import { CARD_H, CARD_T, CARD_W, CardView, refreshCardTextures } from "./cards";
+import { logToText } from "./log-text";
 import { SceneManager, boardSlot, handSlot, pickSlot, BOARD_COLS, BOARD_ROWS } from "./scene";
 import { getTheme, onThemeChange } from "./theme";
 import { UIManager } from "./ui";
@@ -75,6 +76,7 @@ export class GameController {
   constructor(container: HTMLElement, options: GameControllerOptions) {
     this.emitter = options.emitter;
     this.ui = new UIManager(container, { showThemeToggle: !!options.standalone });
+    this.ui.onPlayerClick = (index) => this.emitter.emit("player:clicked", { index });
     this.sceneMgr = new SceneManager(this.ui.root);
 
     onThemeChange(() => {
@@ -100,7 +102,7 @@ export class GameController {
       }
     });
     this.emitter.on("addLog", (data: { start: number; log: LogItem[]; availableMoves?: AvailableMoves[] }) => {
-      void this.applyLog(data);
+      this.applyLog(data);
     });
     this.emitter.on("replayStart", () => {
       this.replaying = true;
@@ -137,6 +139,8 @@ export class GameController {
     this.G = cloneDeep(G);
     this.logQueue = [];
     this.syncAll(true);
+    // Host sidebar: full refresh of the textual log
+    this.emitter.emit("replaceLog", this.G.log.map((item) => logToText(this.G!, item, this.me)).flat());
   }
 
   /** Rebuild the whole scene from the current state (initial load / resync). */
@@ -233,8 +237,8 @@ export class GameController {
 
   /* --------------------------- log application ---------------------------- */
 
-  private async applyLog(data: { start: number; log: LogItem[]; availableMoves?: AvailableMoves[] }) {
-    if (!this.G) {
+  private applyLog(data: { start: number; log: LogItem[]; availableMoves?: AvailableMoves[] }) {
+    if (!this.G || !data || !Array.isArray(data.log)) {
       return;
     }
     // Ignore stale / duplicate logs
@@ -246,21 +250,31 @@ export class GameController {
     if (data.availableMoves) {
       this.pendingAvailableMoves = data.availableMoves;
     }
+    // Never nest applyLoop calls: emitting "addLog" from inside applyLoop can
+    // synchronously re-enter applyLog (host may immediately answer with a new
+    // gamelog). If a batch arrives mid-animation, the running loop picks it up.
     if (this.applying) {
       return;
     }
     this.applying = true;
+    void this.applyLoop().finally(() => {
+      this.applying = false;
+    });
+  }
+
+  private async applyLoop() {
     try {
       while (this.logQueue.length > 0) {
         const item = this.logQueue.shift()!;
         await this.applyLogItem(item);
         if (this.G) {
           this.G.log.push(item);
+          this.emitter.emit("addLog", logToText(this.G, item, this.me));
         }
       }
       this.finishLogApplication();
-    } finally {
-      this.applying = false;
+    } catch (err) {
+      console.error("take6-3d: error while applying log", err);
     }
   }
 
@@ -839,6 +853,7 @@ export class GameController {
     this.logQueue = [];
     this.G = reconstructState(base as unknown as GameState, this.futureG.log.slice(0, to));
     this.syncAll(false);
+    this.emitter.emit("replaceLog", this.G.log.map((item) => logToText(this.G!, item, this.me)).flat());
     this.emitter.emit("replay:info", { start: 1, current: to, end: this.futureG.log.length });
   }
 
