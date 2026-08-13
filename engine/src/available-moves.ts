@@ -1,5 +1,6 @@
-import { GameState, Phase, Card, Player } from "./gamestate";
-import { MoveName } from "./move";
+import type { GameState, Card, Player } from "./gamestate.js";
+import { Phase } from "./gamestate.js";
+import { MoveName } from "./move.js";
 
 export interface AvailableMoves {
   [MoveName.ChooseCard]?: Card[];

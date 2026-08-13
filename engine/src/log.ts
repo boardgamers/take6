@@ -1,5 +1,6 @@
-import { Phase, Card } from "./gamestate";
-import { Move } from "./move";
+import { Phase } from "./gamestate.js";
+import type { Card } from "./gamestate.js";
+import type { Move } from "./move.js";
 
 export enum GameEventName {
   GameStart = "start",

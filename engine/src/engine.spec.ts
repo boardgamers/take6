@@ -1,6 +1,6 @@
 import { expect } from "chai";
-import { setup, move as execMove, ended } from './engine';
-import { Move } from './move';
+import { setup, move as execMove, ended } from './engine.js';
+import type { Move } from './move.js';
 
 describe("Engine", () => {
   it ("should stop after the point limit is reached", () => {

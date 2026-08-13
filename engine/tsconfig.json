@@ -1,15 +1,18 @@
 {
+  "ts-node": {
+    "transpileOnly": true
+  },
   "compilerOptions": {
-    /* Basic Options */
-    "target": "es2018",
-    "module": "commonjs",
+    "target": "ES2020",
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
     "esModuleInterop": true,
+    "strict": false,
     "strictNullChecks": true,
     "skipLibCheck": true,
-    "declaration": true,                   /* Generates corresponding '.d.ts' file. */
-    "sourceMap": true,                     /* Generates corresponding '.map' file. */
-    // "outFile": "./",                       /* Concatenate and emit output to single file. */
-    "outDir": "./dist",                        /* Redirect output structure to the directory. */
+    "declaration": true,
+    "sourceMap": true,
+    "outDir": "./dist"
   },
   "types": [
     "node"

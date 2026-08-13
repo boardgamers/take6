@@ -1,14 +1,16 @@
 # take6
 
-Monorepo for [Take 6](https://en.wikipedia.org/wiki/6_Nimmt!) (a card game similar to 6nimmt): the game engine and two web viewers, consolidated from the former `take6-engine`, `take6-viewer` and `take6-viewer-svg` repositories.
+Monorepo for [Take 6](https://en.wikipedia.org/wiki/6_Nimmt!) (a card game similar to 6nimmt): the game engine and three web viewers, consolidated from the former `take6-engine`, `take6-viewer` and `take6-viewer-svg` repositories.
 
 ## Repository layout
 
-- **`engine/`** (`take6-engine`) — TypeScript engine for Take 6, a game similar to 6nimmt. It implements the full game logic: setup, moves, AI moves, state serialization (`stripSecret`), state reconstruction and scoring, plus a mocha/chai test suite. Built with `tsc`.
+- **`engine/`** (`take6-engine`) — TypeScript engine for Take 6, a game similar to 6nimmt. It implements the full game logic: setup, moves, AI moves, state serialization (`stripSecret`), state reconstruction and scoring, plus a mocha/chai test suite. Published as an ES module (`tsc`, NodeNext), TypeScript 5.
 
 - **`viewer/`** (`take6-viewer`) — A canvas-based viewer for the game built on [Hex Engine](https://hex-engine.dev) (`@hex-engine/2d`). It renders cards, placeholders and player labels with drag & drop and simple animations, and can run a local game against the AI. Built with `hex-engine-scripts`.
 
 - **`viewer-svg/`** (`@gaia-project/take6-viewer`) — An SVG-based viewer written with Vue 2 (class components). It displays the game state and log as SVG/DOM elements with drag & drop, and is also publishable as a reusable library (`vue-cli-service build --target lib`). Built with `vue-cli-service`.
+
+- **`viewer-3d/`** (`take6-viewer-3d`) — A 3D viewer built with [three.js](https://threejs.org) and bundled with Vite. It renders a physical game table (felt, wooden rim), textured cards with canvas-painted faces, a timeline-based animation system (deal / reveal / place / take-row), and springy pointer drag & drop. It auto-frames the table for any screen size, works on mobile and desktop, and follows the host page's light/dark theme via the `dark` class on `<html>`. Run it standalone with `pnpm --filter take6-viewer-3d dev` (plays a local game against 5 AIs), or embed it via `launch(selector)` like the other viewers.
 
 ## Setup
 

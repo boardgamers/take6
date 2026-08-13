@@ -1,4 +1,4 @@
-import { Card } from "./gamestate";
+import type { Card } from "./gamestate.js";
 
 /**
  * Get the full card info based on its number

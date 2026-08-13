@@ -2,6 +2,7 @@ packages:
   - "engine"
   - "viewer"
   - "viewer-svg"
+  - "viewer-3d"
 overrides:
   # The Vue 2 toolchain (vue-loader@15) needs the v2.7 @vue/compiler-sfc string parser;
   # pnpm would otherwise resolve it to the Vue 3 compiler, whose object-API parse()
@@ -12,5 +13,6 @@ allowBuilds:
   "@parcel/watcher": false
   core-js: false
   ejs: false
+  esbuild: true
   nodent-runtime: false
   yorkie: false

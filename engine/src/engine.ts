@@ -1,15 +1,18 @@
 import assert from "assert";
 import seedrandom from "seedrandom";
-import { GameOptions, Phase, GameState, Card, Player } from "./gamestate";
-import { getCard } from "./card";
-import { availableMoves } from "./available-moves";
-import isEqual from "lodash/isEqual";
-import sumBy from "lodash/sumBy";
-import cloneDeep from "lodash/cloneDeep";
-import { Move, MoveName } from "./move";
-import type { Moves } from "./move";
-import { asserts, shuffle } from "./utils";
-import { GameEventName, LogItem } from "./log";
+import type { GameOptions, GameState, Card, Player } from "./gamestate.js";
+import { Phase } from "./gamestate.js";
+import { getCard } from "./card.js";
+import { availableMoves } from "./available-moves.js";
+import isEqual from "lodash/isEqual.js";
+import sumBy from "lodash/sumBy.js";
+import cloneDeep from "lodash/cloneDeep.js";
+import { MoveName } from "./move.js";
+import type { Move } from "./move.js";
+import type { Moves } from "./move.js";
+import { asserts, shuffle } from "./utils.js";
+import { GameEventName } from "./log.js";
+import type { LogItem } from "./log.js";
 
 export function setup(numPlayers: number, {pro = false, points = 66, handSize = 10}: GameOptions, seed?: string): GameState {
   const rng = seedrandom(seed || Math.random().toString());

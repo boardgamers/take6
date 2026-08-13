@@ -1,4 +1,4 @@
-import { Card } from "./gamestate";
+import type { Card } from "./gamestate.js";
 
 export declare namespace Moves {
   export interface MoveChooseCard {

@@ -1,5 +1,5 @@
 import { expect } from "chai";
-import { shuffle } from './utils';
+import { shuffle } from './utils.js';
 
 describe("utils", () => {
   describe("shuffle", () => {

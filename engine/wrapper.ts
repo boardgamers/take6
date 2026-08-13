@@ -1,10 +1,10 @@
-import type {GameState} from "./index";
-import { Move } from "./src/move";
-import * as engine from "./src/engine";
-import { GameEventName } from "./src/log";
-import { asserts } from "./src/utils";
-import type { LogEvent, LogMove, GameEvents } from './src/log';
-import { Player } from "./src/gamestate";
+import type {GameState} from "./index.js";
+import type { Move } from "./src/move.js";
+import * as engine from "./src/engine.js";
+import { GameEventName } from "./src/log.js";
+import { asserts } from "./src/utils.js";
+import type { LogEvent, LogMove, GameEvents } from './src/log.js';
+import type { Player } from "./src/gamestate.js";
 
 export async function init (nbPlayers: number, expansions: string[], options: {}, seed?: string): Promise<GameState> {
   return engine.setup(nbPlayers, options, seed);
@@ -43,7 +43,7 @@ function automove(G: GameState) {
   return G;
 }
 
-export { ended, scores } from './src/engine';
+export { ended, scores } from './src/engine.js';
 
 /**
  * We give 0 to the last player, 1 to the player before last, ...
@@ -96,7 +96,7 @@ export function currentPlayer (G: GameState) {
   return G.players.map((pl, i) => pl.availableMoves ? i : -1).filter(i => i !== -1);
 }
 
-export { stripSecret } from './src/engine';
+export { stripSecret } from './src/engine.js';
 
 export function messages (G: GameState) {
   const messages = (G as any).messages || [];

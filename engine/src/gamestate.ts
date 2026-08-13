@@ -1,5 +1,5 @@
-import { AvailableMoves } from "./available-moves";
-import { LogItem } from "./log";
+import type { AvailableMoves } from "./available-moves.js";
+import type { LogItem } from "./log.js";
 
 export interface GameOptions {
   pro?: boolean;
@@ -13,11 +13,11 @@ export interface Card {
 }
 
 export interface Player {
-  faceDownCard: Card | null;
+  faceDownCard?: Card | null;
   hand: Card[];
   points: number;
   name?: string;
-  availableMoves: AvailableMoves | null;
+  availableMoves?: AvailableMoves | null;
   discard: Card[];
   isAI: boolean;
 }
