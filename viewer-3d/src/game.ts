@@ -477,6 +477,8 @@ export class GameController {
           if (card.number !== 0) {
             this.cards.set(card.number, entry);
             entry.view.setCard(card);
+            // Keep the mirror authoritative: applyPlace reads faceDownCard.
+            G.players[p].faceDownCard = card;
           } else {
             // Re-key under the synthetic slot so applyPlace can find it.
             this.cards.set(-(p * 1000 + 500), entry);
