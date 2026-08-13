@@ -44,8 +44,11 @@ export function pickSlot(index: number, total: number): SlotPos {
   const x = (t - 0.5) * 2 * Math.min(maxX, total * 3.2);
   const arc = x / maxX;
   return {
+    // The arc must sit far enough from row 0 that a card mid-flip (standing on
+    // edge, half its 8.8 height projecting along Z) never reaches the row's
+    // top edge at z = -20. Center at -26 clears it even for the arced ends.
     x,
-    z: -21.2 + arc * arc * 1.9, // slightly bulged toward the board's far edge
+    z: -26 + arc * arc * 1.9, // slightly bulged toward the board's far edge
     rotZ: arc * 0.18
   };
 }

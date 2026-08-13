@@ -218,7 +218,7 @@ export class GameController {
       row.forEach((card, c) => {
         const entry = spawn(card, { kind: "board", row: r, col: c }, true);
         const pos = boardSlot(r, c);
-        this.flyTo(entry, pos.x, pos.z, 0, { faceUp: true, y: CARD_T, animated, zIndex: c });
+        this.flyTo(entry, pos.x, pos.z, 0, { faceUp: true, y: CARD_T, animated, zIndex: c, preserveFlip: true });
       });
     });
 
@@ -249,9 +249,20 @@ export class GameController {
         const faceUp = G.phase === Phase.PlaceCard && pl.faceDownCard.number !== 0;
         const entry = spawn(pl.faceDownCard, { kind: "pick", player: p }, faceUp);
         const pos = pickSlot(p, G.players.length);
-        this.flyTo(entry, pos.x, pos.z, pos.rotZ, { faceUp, y: CARD_T, animated, zIndex: 40 + p });
+        this.flyTo(entry, pos.x, pos.z, pos.rotZ, { faceUp, y: CARD_T, animated, zIndex: 40 + p, preserveFlip: true });
         if (entry.view.card.number === 0) {
           this.hiddenPicks.set(p, entry);
+        }
+      } else {
+        // No pick staged: drop any leftover placeholder for this player (a
+        // just-placed pick still keyed under its synthetic hidden id).
+        for (const key of [-(p * 1000 + 500), -(p * 1000 + 990)]) {
+          const stale = this.cards.get(key);
+          if (stale && stale.zone.kind === "pick") {
+            this.sceneMgr.scene.remove(stale.view.group);
+            stale.view.dispose();
+            this.cards.delete(key);
+          }
         }
       }
     });
@@ -487,7 +498,8 @@ export class GameController {
             // Keep the mirror authoritative: applyPlace reads faceDownCard.
             G.players[p].faceDownCard = card;
           } else {
-            // Re-key under the synthetic slot so applyPlace can find it.
+            // Unresolved for us (pick still secret): re-key under the
+            // synthetic slot so applyPlace can find it.
             this.cards.set(-(p * 1000 + 500), entry);
           }
           resolvedFrom = "hidden";
@@ -513,6 +525,12 @@ export class GameController {
       const view = entry.view;
       const pos = pickSlot(p, nPlayers);
       view.zIndex = 40 + p;
+      // Only flip face-up when we actually know the card. A card that already
+      // reads face-up must never be sent back face-down by this tween.
+      const targetFlip = card.number !== 0 || resolvedFrom === "materialized" ? 0 : Math.PI;
+      const startFlip = targetFlip === 0 ? view.anim.flip : Math.max(view.anim.flip, Math.PI);
+      const startY = view.anim.y;
+      const startScale = view.anim.scale;
       flips.push(
         (async () => {
           await delay(p * 0.05);
@@ -520,13 +538,12 @@ export class GameController {
             duration: 0.55,
             easing: Easing.easeInOutCubic,
             onUpdate: (t) => {
-              // Only flip face-up when we actually know the card.
-              const targetFlip = card.number !== 0 || resolvedFrom === "materialized" ? 0 : Math.PI;
-              view.anim.flip = THREE.MathUtils.lerp(view.anim.flip, targetFlip, t);
-              view.anim.y = CARD_T + Math.sin(t * Math.PI) * 3.5;
+              view.anim.flip = THREE.MathUtils.lerp(startFlip, targetFlip, t);
+              view.anim.y = startY + Math.sin(t * Math.PI) * 3.5;
               view.anim.x = pos.x;
               view.anim.z = pos.z;
               view.anim.rotZ = pos.rotZ;
+              view.anim.scale = THREE.MathUtils.lerp(startScale, 1, t);
               view.applyAnim();
             }
           });
@@ -633,17 +650,23 @@ export class GameController {
     const view = entry.view;
     view.zIndex = 40 + player;
 
+    const fromX = view.anim.x;
     const fromY = view.anim.y;
+    const fromZ = view.anim.z;
+    const fromRotZ = view.anim.rotZ;
+    const fromFlip = view.anim.flip;
+    const fromScale = view.anim.scale;
     await tweenViewAsync(view, {
       duration: 0.5,
       easing: Easing.easeInOutCubic,
       onUpdate: (t) => {
-        view.anim.x = THREE.MathUtils.lerp(view.anim.x, pos.x, t);
-        view.anim.z = THREE.MathUtils.lerp(view.anim.z, pos.z, t);
+        view.anim.x = THREE.MathUtils.lerp(fromX, pos.x, t);
+        view.anim.z = THREE.MathUtils.lerp(fromZ, pos.z, t);
         view.anim.y = THREE.MathUtils.lerp(fromY, CARD_T, t) + Math.sin(t * Math.PI) * 4;
-        view.anim.rotZ = THREE.MathUtils.lerp(view.anim.rotZ, pos.rotZ, t);
+        view.anim.rotZ = THREE.MathUtils.lerp(fromRotZ, pos.rotZ, t);
         // Own card: flip to face down; opponent card: stays face down
-        view.anim.flip = THREE.MathUtils.lerp(view.anim.flip, Math.PI, Math.min(t * 1.6, 1));
+        view.anim.flip = THREE.MathUtils.lerp(fromFlip, Math.PI, Math.min(t * 1.6, 1));
+        view.anim.scale = THREE.MathUtils.lerp(fromScale, 1, t);
         view.applyAnim();
       }
     });
@@ -718,7 +741,13 @@ export class GameController {
     }
 
     {
-      this.cards.delete(entry.view.number);
+      // The entry may be keyed under a synthetic negative id (unresolved
+      // hidden pick) — re-key under the real card number either way.
+      for (const [key, e] of this.cards) {
+        if (e === entry && key !== card.number) {
+          this.cards.delete(key);
+        }
+      }
       this.cards.set(card.number, entry);
       if (entry.view.card.number !== card.number) {
         entry.view.setCard(card);
@@ -728,6 +757,10 @@ export class GameController {
       view.zIndex = 60 + (replace ? 0 : col);
       const startX = view.anim.x;
       const startZ = view.anim.z;
+      const startRotZ = view.anim.rotZ;
+      // A placed card always ends face-up — never flip a face-up card down.
+      const startFlip = Math.min(view.anim.flip, Math.PI);
+      const startScale = view.anim.scale;
       anims.push(
         tweenViewAsync(view, {
           duration: 0.6,
@@ -736,8 +769,9 @@ export class GameController {
             view.anim.x = THREE.MathUtils.lerp(startX, pos.x, t);
             view.anim.z = THREE.MathUtils.lerp(startZ, pos.z, t);
             view.anim.y = CARD_T + Math.sin(t * Math.PI) * 5;
-            view.anim.rotZ = THREE.MathUtils.lerp(view.anim.rotZ, 0, t);
-            view.anim.flip = THREE.MathUtils.lerp(view.anim.flip, 0, Math.min(t * 2, 1));
+            view.anim.rotZ = THREE.MathUtils.lerp(startRotZ, 0, t);
+            view.anim.flip = THREE.MathUtils.lerp(startFlip, 0, Math.min(t * 2, 1));
+            view.anim.scale = THREE.MathUtils.lerp(startScale, 1, t);
             view.applyAnim();
           }
         })
@@ -835,7 +869,7 @@ export class GameController {
     x: number,
     z: number,
     rotZ: number,
-    opts: { faceUp: boolean; y: number; animated: boolean; zIndex?: number; scale?: number }
+    opts: { faceUp: boolean; y: number; animated: boolean; zIndex?: number; scale?: number; preserveFlip?: boolean }
   ) {
     const view = entry.view;
     if (opts.zIndex !== undefined) {
@@ -845,16 +879,23 @@ export class GameController {
     const sy = view.anim.y;
     const sz = view.anim.z;
     const sr = view.anim.rotZ;
-    const sf = view.anim.flip;
     const ss = view.anim.scale;
-    const targetFlip = opts.faceUp ? 0 : Math.PI;
     const targetScale = opts.scale ?? 1;
+    const targetFlip = opts.faceUp ? 0 : Math.PI;
+    // Never restart a flip that is already (nearly) at its target face:
+    // resync re-flying a face-up card to "face-up" would otherwise capture
+    // the current angle and flip it down then back up. The clamp also keeps
+    // a card meant to end face-up from ever flipping down.
+    let sf = view.anim.flip;
+    if (!opts.preserveFlip || Math.abs(targetFlip - sf) > 0.05) {
+      sf = targetFlip === 0 ? Math.min(sf, Math.PI) : Math.max(sf, Math.PI);
+    }
     if (!opts.animated) {
       view.anim.x = x;
       view.anim.y = opts.y;
       view.anim.z = z;
       view.anim.rotZ = rotZ;
-      view.anim.flip = targetFlip;
+      view.anim.flip = sf;
       view.anim.scale = targetScale;
       view.applyAnim();
       return;
@@ -1216,10 +1257,11 @@ export class GameController {
         this.resetDraggedCard(d.entry, false);
         return;
       }
-      // Dropped onto the pick zone (above the board)?
+      // Dropped onto the pick zone (above the board)? The z threshold sits
+      // halfway between the pick arc (-26) and row 0's top edge (-20).
       const pick = pickSlot(me, G.players.length);
       const dist = Math.hypot(d.target.x - pick.x, d.target.z - pick.z);
-      if (dist < 11 || d.target.z < -18) {
+      if (dist < 11 || d.target.z < -22) {
         this.sendMove({ name: MoveName.ChooseCard, data: { number: card.number, points: card.points } });
       }
       this.resetDraggedCard(d.entry, true);
