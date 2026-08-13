@@ -16,6 +16,8 @@ export default defineConfig({
     target: "es2020",
     chunkSizeWarningLimit: 1200,
     outDir: "dist-lib",
+    // Emit take6-viewer-3d.umd.js.map so production errors map to real source lines.
+    sourcemap: true,
     lib: {
       entry: fileURLToPath(new URL("./src/index.ts", import.meta.url)),
       name: "take63d",
