@@ -139,7 +139,8 @@ html.dark .t6-root, .t6-root.t6-dark {
 .t6-end-row.t6-winner { background: color-mix(in srgb, var(--t6-accent) 14%, transparent); }
 `;
 
-const BULL_ICON = `<svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 3C8 3 5 5.5 4.5 8.5c-.3 1.5.2 2.8 1.1 3.7C5 13 4.6 14 4.6 15.2 4.6 18 8 21 12 21s7.4-3 7.4-5.8c0-1.2-.4-2.2-1-3 .9-.9 1.4-2.2 1.1-3.7C19 5.5 16 3 12 3zM8.2 15.6c-.6 0-1-.5-1-1s.5-1 1-1 1 .4 1 1-.4 1-1 1zm7.6 0c-.6 0-1-.5-1-1s.5-1 1-1 1 .4 1 1-.4 1-1 1z"/></svg>`;
+// Points marker: a stylized "6" emblem — original artwork, not the trademarked bull head
+const BULL_ICON = `<svg viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="12" r="10.5" fill="none" stroke="currentColor" stroke-width="2"/><text x="12" y="16.5" text-anchor="middle" font-size="13" font-weight="900" font-family="Arial, sans-serif">6</text></svg>`;
 const SUN_ICON = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>`;
 const MOON_ICON = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M21 12.8A9 9 0 1 1 11.2 3 7 7 0 0 0 21 12.8z"/></svg>`;
 
@@ -303,14 +304,14 @@ export class UIManager {
           <span class="t6-rank">${rank + 1}</span>
           <span class="t6-dot" style="background:${playerColor(i)}"></span>
           <span class="t6-nm">${name}</span>
-          <span class="t6-sc">${pl.points} 🐂</span>
+          <span class="t6-sc">${pl.points} pts</span>
         </div>`;
       })
       .join("");
 
     el.innerHTML = `<div class="t6-end-panel">
       <h2>${meWon ? "🎉 You win!" : `${escapeHtml(winner.pl.name ?? `Player ${winner.i + 1}`)} wins!`}</h2>
-      <div class="t6-sub">Fewest bull heads wins — final scores</div>
+      <div class="t6-sub">Fewest points wins — final scores</div>
       ${rows}
     </div>`;
     this.root.appendChild(el);

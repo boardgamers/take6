@@ -76,7 +76,7 @@ export function cardGeometry(): THREE.BufferGeometry {
 /* Texture painting                                                    */
 /* ------------------------------------------------------------------ */
 
-/** Points -> face tint, mirroring the classic 6nimmt color coding. */
+/** Points -> face tint. */
 function faceColors(points: number, dark: boolean): { top: string; bottom: string; accent: string } {
   switch (points) {
     case 7:
@@ -102,67 +102,22 @@ function faceColors(points: number, dark: boolean): { top: string; bottom: strin
   }
 }
 
-function drawBullHead(ctx: CanvasRenderingContext2D, cx: number, cy: number, scale: number, color: string) {
+function drawPointPip(ctx: CanvasRenderingContext2D, cx: number, cy: number, r: number, color: string) {
+  // Simple filled ring pip — original artwork, no trademarked bull head
   ctx.save();
-  ctx.translate(cx, cy);
-  ctx.scale(scale, scale);
   ctx.fillStyle = color;
-  ctx.strokeStyle = color;
-  ctx.lineCap = "round";
-  ctx.lineWidth = 6;
-
-  // Horns
   ctx.beginPath();
-  ctx.moveTo(-14, -10);
-  ctx.quadraticCurveTo(-34, -18, -36, -40);
-  ctx.quadraticCurveTo(-22, -26, -10, -22);
-  ctx.closePath();
+  ctx.arc(cx, cy, r, 0, Math.PI * 2);
   ctx.fill();
-  ctx.beginPath();
-  ctx.moveTo(14, -10);
-  ctx.quadraticCurveTo(34, -18, 36, -40);
-  ctx.quadraticCurveTo(22, -26, 10, -22);
-  ctx.closePath();
-  ctx.fill();
-
-  // Ears
-  ctx.beginPath();
-  ctx.ellipse(-20, -8, 10, 6, -0.5, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.beginPath();
-  ctx.ellipse(20, -8, 10, 6, 0.5, 0, Math.PI * 2);
-  ctx.fill();
-
-  // Head
-  ctx.beginPath();
-  ctx.ellipse(0, 2, 17, 22, 0, 0, Math.PI * 2);
-  ctx.fill();
-
-  // Muzzle
-  ctx.beginPath();
-  ctx.ellipse(0, 18, 11, 9, 0, 0, Math.PI * 2);
-  ctx.fill();
-
-  // Eyes + nostrils punched out
   ctx.globalCompositeOperation = "destination-out";
   ctx.beginPath();
-  ctx.arc(-7, -2, 3.2, 0, Math.PI * 2);
+  ctx.arc(cx, cy, r * 0.45, 0, Math.PI * 2);
   ctx.fill();
-  ctx.beginPath();
-  ctx.arc(7, -2, 3.2, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.beginPath();
-  ctx.arc(-4.5, 19, 2.1, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.beginPath();
-  ctx.arc(4.5, 19, 2.1, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.globalCompositeOperation = "source-over";
   ctx.restore();
 }
 
 function drawBullPoints(ctx: CanvasRenderingContext2D, points: number, w: number, h: number, color: string) {
-  // Row of small bull heads in the top-right diagonal, like the real game
+  // Row of small pips in the top-right diagonal
   const positions: [number, number][] = [];
   if (points === 1) {
     positions.push([0.82, 0.12]);
@@ -175,11 +130,9 @@ function drawBullPoints(ctx: CanvasRenderingContext2D, points: number, w: number
   } else if (points === 7) {
     positions.push([0.62, 0.06], [0.72, 0.1], [0.81, 0.14], [0.9, 0.19], [0.65, 0.17], [0.75, 0.21], [0.87, 0.26]);
   }
-  // Bull heads are ~44 units wide at scale 1; a point pip should be ~13% of
-  // the card width.
-  const pipScale = (w * 0.13) / 44;
+  const pipRadius = w * 0.055;
   for (const [fx, fy] of positions) {
-    drawBullHead(ctx, fx * w, fy * h, pipScale, color);
+    drawPointPip(ctx, fx * w, fy * h, pipRadius, color);
   }
 }
 
@@ -235,12 +188,16 @@ export function cardFaceTexture(card: Card): THREE.CanvasTexture {
   ctx.textAlign = "left";
   ctx.fillText(String(card.number), w * 0.08, h * 0.1);
 
-  // Bull points
+  // Point pips
   drawBullPoints(ctx, card.points, w, h, colors.accent);
 
-  // Big faded bull watermark behind the number
-  ctx.globalAlpha = dark ? 0.12 : 0.1;
-  drawBullHead(ctx, w / 2, h * 0.5, (w * 0.55) / 44, colors.accent);
+  // Big faded "6" watermark behind the number — no trademarked artwork
+  ctx.globalAlpha = dark ? 0.1 : 0.08;
+  ctx.fillStyle = colors.accent;
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.font = `900 ${w * 0.85}px "Arial Black", Arial, sans-serif`;
+  ctx.fillText("6", w / 2, h * 0.54);
   ctx.globalAlpha = 1;
 
   const texture = new THREE.CanvasTexture(canvas);
@@ -296,9 +253,15 @@ export function cardBackTexture(): THREE.CanvasTexture {
   ctx.arc(w / 2, h / 2, w * 0.26, 0, Math.PI * 2);
   ctx.stroke();
   ctx.beginPath();
-  ctx.arc(w / 2, h / 2, w * 0.31, 0, Math.PI * 2);
+  ctx.arc(w / 2, h / 2, w * 0.34, 0, Math.PI * 2);
   ctx.stroke();
-  drawBullHead(ctx, w / 2, h / 2 + w * 0.04, (w * 0.34) / 44, "rgba(255,235,200,0.9)");
+
+  // Neutral "6" emblem — avoids the trademarked bull-head logo
+  ctx.fillStyle = "rgba(255,235,200,0.9)";
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.font = `900 ${w * 0.38}px "Arial Black", Arial, sans-serif`;
+  ctx.fillText("6", w / 2, h / 2 + w * 0.02);
 
   const inset = w * 0.05;
   ctx.strokeStyle = "rgba(255,235,200,0.6)";

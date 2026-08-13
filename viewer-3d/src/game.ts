@@ -627,7 +627,7 @@ export class GameController {
 
     if (replace) {
       const name = pl.name ?? `Player ${player + 1}`;
-      this.ui.toast(`${player === this.me ? "You take" : name + " takes"} the row! 🐂`, player === this.me);
+      this.ui.toast(`${player === this.me ? "You take" : name + " takes"} the row!`, player === this.me);
       // Cards fly to the player's score pile
       const steal: Promise<void>[] = [];
       rowCards.forEach((c, i) => {
