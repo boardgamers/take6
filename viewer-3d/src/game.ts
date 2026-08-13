@@ -76,7 +76,10 @@ export class GameController {
   constructor(container: HTMLElement, options: GameControllerOptions) {
     this.emitter = options.emitter;
     this.ui = new UIManager(container, { showThemeToggle: !!options.standalone });
-    this.ui.onPlayerClick = (index) => this.emitter.emit("player:clicked", { index });
+    this.ui.onPlayerClick = (index) => {
+      const name = this.G?.players[index]?.name ?? `Player ${index + 1}`;
+      this.emitter.emit("player:clicked", { index, name });
+    };
     this.sceneMgr = new SceneManager(this.ui.root);
 
     onThemeChange(() => {

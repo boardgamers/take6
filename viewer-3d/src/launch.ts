@@ -10,7 +10,7 @@ import { applyHostTheme } from "./theme";
  *  - in:  "state" (GameState), "player" ({index}), "gamelog" ({start, data:{log, availableMoves}}),
  *         "preferences" ({dark?: boolean}), "replay:start", "replay:to" (index), "replay:end"
  *  - out: "move", "fetchState", "fetchLog", "ready", "addLog", "replaceLog", "replay:info",
- *         "player:clicked"
+ *         "player:clicked" ({index, name}) — the host navigates to /user/<name>
  */
 export function launch(selector: string | HTMLElement): EventEmitter {
   const container =
@@ -34,7 +34,7 @@ export function launch(selector: string | HTMLElement): EventEmitter {
   inner.on("ready", () => item.emit("ready"));
   inner.on("addLog", (lines: string[]) => item.emit("addLog", lines));
   inner.on("replaceLog", (lines: string[]) => item.emit("replaceLog", lines));
-  inner.on("player:clicked", (data: { index: number }) => item.emit("player:clicked", data));
+  inner.on("player:clicked", (data: { index: number; name: string }) => item.emit("player:clicked", data));
   inner.on("replay:info", (info: { start: number; current: number; end: number }) =>
     item.emit("replay:info", info)
   );
