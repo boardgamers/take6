@@ -1051,6 +1051,7 @@ export class GameController {
     el.addEventListener("pointermove", this.onPointerMove);
     el.addEventListener("pointerup", this.onPointerUp);
     el.addEventListener("pointercancel", this.onPointerUp);
+    el.addEventListener("pointerleave", this.onPointerLeave);
   }
 
   private unbindInput() {
@@ -1059,6 +1060,7 @@ export class GameController {
     el.removeEventListener("pointermove", this.onPointerMove);
     el.removeEventListener("pointerup", this.onPointerUp);
     el.removeEventListener("pointercancel", this.onPointerUp);
+    el.removeEventListener("pointerleave", this.onPointerLeave);
   }
 
   private myMoves(): AvailableMoves | null {
@@ -1205,6 +1207,22 @@ export class GameController {
 
   private hoverEntry: CardEntry | null = null;
 
+  /** Lower the hover lift (no-op when nothing is hovered). */
+  private clearHover() {
+    if (!this.hoverEntry) {
+      return;
+    }
+    const e = this.hoverEntry;
+    this.hoverEntry = null;
+    const from = e.view.lift;
+    tweenView(e.view, { duration: 0.18, onUpdate: (t) => ((e.view.lift = THREE.MathUtils.lerp(from, 0, t)), e.view.applyAnim()) });
+    this.sceneMgr.renderer.domElement.style.cursor = "default";
+  }
+
+  private onPointerLeave = () => {
+    this.clearHover();
+  };
+
   private updateHover(ev: PointerEvent) {
     const moves = this.myMoves();
     const targets = moves?.chooseCard ? this.handRaycastTargets() : [];
@@ -1217,11 +1235,14 @@ export class GameController {
       }
       entry = group ? this.entryOfGroup(group) ?? null : null;
     }
+    // A hover target is only a hand card that can be chosen right now; a card
+    // played under a still cursor (or a stale entry after a resync) must drop
+    // its lift without waiting for the next pointermove.
+    if (entry && entry.zone.kind !== "hand") {
+      entry = null;
+    }
     if (this.hoverEntry && this.hoverEntry !== entry) {
-      const e = this.hoverEntry;
-      const from = e.view.lift;
-      tweenView(e.view, { duration: 0.18, onUpdate: (t) => ((e.view.lift = THREE.MathUtils.lerp(from, 0, t)), e.view.applyAnim()) });
-      this.hoverEntry = null;
+      this.clearHover();
     }
     if (entry && this.hoverEntry !== entry) {
       this.hoverEntry = entry;
@@ -1333,6 +1354,11 @@ export class GameController {
   }
 
   private sendMove(move: Move) {
+    // The played card leaves the hand: drop its hover lift immediately instead
+    // of keeping it raised/glowing until the next pointermove.
+    if (move.name === MoveName.ChooseCard && this.hoverEntry?.view.card.number === move.data.number) {
+      this.clearHover();
+    }
     this.emitter.emit("move", cloneDeep(move));
   }
 
