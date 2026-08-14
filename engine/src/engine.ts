@@ -203,6 +203,14 @@ function switchToNextPlayer(G: GameState): GameState {
 
   player.availableMoves = availableMoves(G, player);
 
+  // A single legal placement is deterministic: the row is fully determined by
+  // the card and the board, so resolve it right away instead of asking the
+  // player to confirm. Multi-row placeCard (card lower than every row tail —
+  // picking which row to take) is a real decision and is left to the player.
+  if (player.availableMoves?.placeCard?.length === 1) {
+    return move(G, {name: MoveName.PlaceCard, data: player.availableMoves.placeCard[0]}, G.players.indexOf(player));
+  }
+
   return G;
 }
 
