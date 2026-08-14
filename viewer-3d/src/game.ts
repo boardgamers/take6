@@ -51,6 +51,13 @@ export class GameController {
   private replaying = false;
   private logQueue: LogItem[] = [];
   private applying = false;
+  /**
+   * Number of log items ACCEPTED so far (applied + still queued). Incoming
+   * logs are deduped against this watermark, NOT against `G.log.length`:
+   * items queued in `logQueue` but not yet applied (mid-animation) would
+   * otherwise be re-accepted when a full `start: 0` redelivery arrives.
+   */
+  private acceptedLog = 0;
 
   private cards = new Map<number, CardEntry>();
   /**
@@ -152,6 +159,7 @@ export class GameController {
     }
     this.G = cloneDeep(G);
     this.logQueue = [];
+    this.acceptedLog = this.G.log.length;
     this.syncAll(true);
     // Host sidebar: full refresh of the textual log
     this.emitter.emit("replaceLog", this.G.log.map((item) => logToText(this.G!, item, this.me)).flat());
@@ -282,10 +290,11 @@ export class GameController {
       return;
     }
     // Ignore stale / duplicate logs
-    const fresh = data.log.slice(Math.max(0, this.G.log.length - data.start));
+    const fresh = data.log.slice(Math.max(0, this.acceptedLog - data.start));
     if (fresh.length === 0 && !data.availableMoves) {
       return;
     }
+    this.acceptedLog += fresh.length;
     this.logQueue.push(...fresh);
     if (data.availableMoves) {
       this.pendingAvailableMoves = data.availableMoves;
@@ -1012,6 +1021,7 @@ export class GameController {
     };
     this.logQueue = [];
     this.G = reconstructState(base as unknown as GameState, this.futureG.log.slice(0, to));
+    this.acceptedLog = this.G.log.length;
     this.syncAll(false);
     this.emitter.emit("replaceLog", this.G.log.map((item) => logToText(this.G!, item, this.me)).flat());
     this.emitter.emit("replay:info", { start: 1, current: to, end: this.futureG.log.length });
