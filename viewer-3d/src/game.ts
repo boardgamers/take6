@@ -1214,8 +1214,11 @@ export class GameController {
     }
     const e = this.hoverEntry;
     this.hoverEntry = null;
-    const from = e.view.lift;
-    tweenView(e.view, { duration: 0.18, onUpdate: (t) => ((e.view.lift = THREE.MathUtils.lerp(from, 0, t)), e.view.applyAnim()) });
+    // Settle synchronously: flight tweens about to start on this card (e.g.
+    // the just-played card flying to the pick zone) would cancel a lift tween
+    // before its first frame and leave the lift stuck mid-value.
+    e.view.lift = 0;
+    e.view.applyAnim();
     this.sceneMgr.renderer.domElement.style.cursor = "default";
   }
 
