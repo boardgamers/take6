@@ -12,10 +12,9 @@ import { applyHostTheme } from "./theme";
  *         {start, end?, data: {log, availableMoves}} after a move),
  *         "preferences" ({dark?: boolean, devMode?: boolean} — devMode mounts
  *         the debug controls panel), "replay:start", "replay:to" (index),
- *         "replay:end", "requestDebugInfo" (the platform's copy-debug-info button)
+ *         "replay:end"
  *  - out: "move", "fetchState", "fetchLog", "ready", "addLog" (string[]),
  *         "replaceLog" (string[]), "replay:info",
- *         "debugInfo" (JSON payload answering requestDebugInfo),
  *         "player:clicked" ({index, name}) — the host navigates to /user/<name>
  *
  * Inner-emitter naming: inbound game-log slices arrive on the inner emitter as
@@ -80,10 +79,6 @@ export function launch(selector: string | HTMLElement): EventEmitter {
     }
   });
 
-  // Platform debug FAB: answer with a full controller snapshot + anim log.
-  item.addListener("requestDebugInfo", () => {
-    item.emit("debugInfo", controller.collectDebugInfo());
-  });
 
   // The site notifies the iframe about theme changes through a raw postMessage
   // (not re-emitted on the emitter)
