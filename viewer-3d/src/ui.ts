@@ -52,6 +52,18 @@ html.dark .t6-root, .t6-root.t6-dark {
 }
 .t6-round b { color: var(--t6-text); }
 
+.t6-myscore {
+  display: flex; align-items: center; gap: 6px;
+  background: var(--t6-panel); border: 1px solid var(--t6-accent);
+  backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
+  border-radius: 999px; padding: 5px 14px; font-weight: 700; font-size: 13px;
+  letter-spacing: 0.04em; color: var(--t6-text);
+  box-shadow: 0 2px 10px rgba(0,0,0,0.12);
+}
+.t6-myscore .t6-you { color: var(--t6-text-dim); text-transform: uppercase; letter-spacing: 0.06em; font-size: 11px; }
+.t6-myscore .t6-pts { display: flex; align-items: center; gap: 3px; color: var(--t6-accent); font-variant-numeric: tabular-nums; }
+.t6-myscore .t6-pts svg { width: 14px; height: 14px; }
+
 .t6-status {
   position: absolute; bottom: calc(env(safe-area-inset-bottom, 0px) + 10px); left: 50%;
   transform: translateX(-50%); z-index: 5; pointer-events: none;
@@ -159,6 +171,7 @@ export class UIManager {
   readonly root: HTMLDivElement;
   private statusEl!: HTMLDivElement;
   private roundEl!: HTMLDivElement;
+  private myScoreEl!: HTMLDivElement;
   private leftPlayers!: HTMLDivElement;
   private rightPlayers!: HTMLDivElement;
   private toastsEl!: HTMLDivElement;
@@ -195,6 +208,9 @@ export class UIManager {
     this.roundEl = document.createElement("div");
     this.roundEl.className = "t6-round";
     topbar.appendChild(this.roundEl);
+    this.myScoreEl = document.createElement("div");
+    this.myScoreEl.className = "t6-myscore";
+    topbar.appendChild(this.myScoreEl);
     this.root.appendChild(topbar);
 
     this.leftPlayers = document.createElement("div");
@@ -249,6 +265,8 @@ export class UIManager {
   }
 
   updatePlayers(G: GameState, meIndex: number | undefined) {
+    // Spectators (no "me") don't get a personal score pill.
+    this.myScoreEl.style.display = meIndex === undefined ? "none" : "";
     // Rebuild badges if player count changed
     if (this.badges.length !== G.players.length) {
       this.leftPlayers.innerHTML = "";
@@ -271,6 +289,8 @@ export class UIManager {
 
     G.players.forEach((pl, i) => {
       if (i === meIndex) {
+        // Our own score lives in the top bar, always visible.
+        this.myScoreEl.innerHTML = `<span class="t6-you">You</span><span class="t6-pts">${BULL_ICON}${pl.points}</span>`;
         return;
       }
       const badge = this.badges[i];

@@ -387,6 +387,10 @@ export class GameController {
   private async applyRoundStart(playerHands: Card[][], board: Card[], round: number) {
     const G = this.G!;
     G.round = round;
+    // Reset the mirror's rows to the new starters. Without this G.rows keeps
+    // last round's cards, and pruneStaleCards (which builds its alive-set from
+    // G.rows) deletes the freshly dropped starters as "stale".
+    G.rows = board.map((card) => [card]) as GameState["rows"];
     this.ui.setRound(round);
     this.ui.toast(`Round ${round}`);
     this.ui.hideEndScreen();
@@ -472,6 +476,9 @@ export class GameController {
           const view = new CardView(card.number === 0 ? card : { number: 0, points: 0 });
           view.anim.y = -100;
           view.anim.scale = 0.01;
+          // The constructor's applyAnim ran while anim.y was still 0, leaving the
+          // group at the table origin; re-apply so the card actually moves offscreen.
+          view.applyAnim();
           this.sceneMgr.scene.add(view.group);
           this.cards.set(card.number || -(p * 1000 + i + 1), { view, zone: { kind: "offscreen" } });
         }
