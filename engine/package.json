@@ -9,10 +9,12 @@
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
+      "development": "./index.ts",
       "default": "./dist/index.js"
     },
     "./wrapper": {
       "types": "./dist/wrapper.d.ts",
+      "development": "./wrapper.ts",
       "default": "./dist/wrapper.js"
     },
     "./package.json": "./package.json"

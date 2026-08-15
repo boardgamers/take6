@@ -11,7 +11,7 @@ pnpm install
 pnpm --filter take6-viewer-3d dev
 ```
 
-Then open the printed URL (default http://localhost:5203). You'll get a local game against five AI opponents — no server needed.
+Then open the printed URL (default http://localhost:5203). You'll get a local game against five AI opponents — no server needed. The viewer resolves the engine's TypeScript source directly in dev, so edits to `engine/` hot-reload with no build step.
 
 To shorten a game while testing, append query params, e.g. `?points=2&handSize=2`.
 
