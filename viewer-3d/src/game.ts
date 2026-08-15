@@ -4,6 +4,7 @@ import { cloneDeep } from "lodash";
 import type { AvailableMoves, Card, GameState, LogItem, Move } from "take6-engine";
 import { ended, GameEventName, MoveName, Phase, reconstructState } from "take6-engine";
 import { Easing, Spring, cancelTweensOf, delay, isViewAnimating, tweenView, tweenViewAsync, updateTweens } from "./anim";
+import { advance } from "./anim-controls";
 import { animLog } from "./anim-log";
 import { CARD_H, CARD_T, CARD_W, CardView, refreshCardTextures } from "./cards";
 import { logToText } from "./log-text";
@@ -1427,7 +1428,7 @@ export class GameController {
     }
     requestAnimationFrame(this.renderer_loop);
     const dt = Math.min(this.clock.getDelta(), 0.05);
-    updateTweens(dt);
+    updateTweens(advance(dt));
 
     // Record the trajectory of every card currently being animated (and every
     // hidden card, so stray placeholders are caught even mid-flight). Static

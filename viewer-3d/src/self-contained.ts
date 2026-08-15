@@ -1,6 +1,7 @@
 import { cloneDeep } from "lodash";
 import type { Move } from "take6-engine";
 import { move as execMove, moveAI, setup, stripSecret } from "take6-engine";
+import { mountAnimControls } from "./anim-controls-panel";
 import launch from "./launch";
 
 /**
@@ -10,6 +11,15 @@ import launch from "./launch";
  */
 export function launchSelfContained(selector: string | HTMLElement = "#app", numPlayers?: number) {
   const emitter = launch(selector);
+
+  // Dev harness only: floating animation controls (record / pause / step /
+  // copy). Mounted into the viewer's positioned root so it floats over the
+  // canvas. Never part of the platform bundle's UI.
+  const container = typeof selector === "string" ? document.querySelector(selector) : selector;
+  const uiRoot = container?.querySelector<HTMLElement>(".t6-root");
+  if (uiRoot) {
+    mountAnimControls(uiRoot);
+  }
 
   // Dev/demo shortcuts: ?players=3 changes the table size, ?points=2&handSize=2
   // shortens the game (handy to reach the end screen quickly when testing locally).
