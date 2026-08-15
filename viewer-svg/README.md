@@ -1,5 +1,7 @@
 # take6-viewer-svg
 
+> **Archived** — this Vue 2 SVG viewer is no longer maintained. See [`viewer-3d/`](../viewer-3d/) for the current viewer.
+
 ## Project setup
 ```
 yarn install

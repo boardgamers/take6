@@ -2,6 +2,8 @@
 
 A [6 Nimmt!](https://en.wikipedia.org/wiki/6_Nimmt!)-like card game: a TypeScript game engine plus web viewers, built for the [boardgamers.space](https://boardgamers.space) platform.
 
+![Take 6 — 3D viewer](capture.png)
+
 ## Quick start
 
 ```sh
