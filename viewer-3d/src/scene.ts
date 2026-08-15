@@ -43,14 +43,13 @@ export function pickSlot(index: number, total: number): SlotPos {
   const t = total > 1 ? index / (total - 1) : 0.5;
   const x = (t - 0.5) * 2 * Math.min(maxX, total * 3.2);
   const arc = x / maxX;
-  return {
-    // The arc must sit far enough from row 0 that a card mid-flip (standing on
-    // edge, half its 8.8 height projecting along Z) never reaches the row's
-    // top edge at z = -20. Center at -26 clears it even for the arced ends.
-    x,
-    z: -26 + arc * arc * 1.9, // slightly bulged toward the board's far edge
-    rotZ: arc * 0.18
-  };
+  const rotZ = arc * 0.18;
+  // Row 0's top edge sits at z = -20. A resting card's bottom corner reaches
+  // z + (CARD_H/2)·cos(rotZ) + (CARD_W/2)·sin|rotZ| ≈ z + 4.9, and a mid-flip
+  // card standing on edge reaches z + CARD_H/2 = z + 4.4. Keep the arced ends
+  // at z ≤ -25.2 so neither ever overlaps row 0 — the bulge must stay shallow.
+  const z = -27 + arc * arc * 1.0;
+  return { x, z, rotZ };
 }
 
 /** Hand card slot. `count` is total cards in hand, `i` the index. */
