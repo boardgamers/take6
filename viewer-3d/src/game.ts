@@ -240,6 +240,10 @@ export class GameController {
           view.anim.scale = 0.01;
           view.anim.y = 12;
         }
+        // The constructor rendered the DEFAULT anim (face-down at the table
+        // origin); apply the real one now or the mesh sits at board center
+        // until the first tween frame — the "flashing face-down card" bug.
+        view.applyAnim();
       } else {
         entry.zone = zone;
         if (entry.view.number === 0 && card.number !== 0) {
@@ -305,6 +309,7 @@ export class GameController {
             view.anim.scale = 0.01;
             view.anim.y = 12;
           }
+          view.applyAnim(); // constructor rendered the origin — see spawn()
           entry = { view, zone: { kind: "pick", player: p } };
           this.cards.set(-(p * 1000 + 500), entry);
           this.sceneMgr.scene.add(view.group);
@@ -494,6 +499,10 @@ export class GameController {
       const pos = boardSlot(r, 0);
       view.anim.x = pos.x;
       view.anim.z = pos.z;
+      // Render the drop start NOW: until this tween's stagger delay elapses,
+      // the mesh would otherwise sit at the constructor's origin — the
+      // face-down card flashing at board center between rounds.
+      view.applyAnim();
       this.sceneMgr.scene.add(view.group);
       const entry: CardEntry = { view, zone: { kind: "board", row: r, col: 0 } };
       this.cards.set(card.number, entry);
@@ -529,6 +538,7 @@ export class GameController {
           view.anim.x = 34;
           view.anim.z = 24;
           view.anim.scale = 0.6;
+          view.applyAnim(); // constructor rendered the origin — see spawn()
           this.sceneMgr.scene.add(view.group);
           this.cards.set(card.number, { view, zone: { kind: "hand", index: i } });
           deals.push(
@@ -635,6 +645,7 @@ export class GameController {
         view.anim.z = pos.z;
         view.anim.y = CARD_T;
         view.anim.flip = Math.PI;
+        view.applyAnim(); // constructor rendered the origin — see spawn()
         this.sceneMgr.scene.add(view.group);
         entry = { view, zone: { kind: "pick", player: p } };
         this.cards.set(card.number !== 0 ? card.number : -(p * 1000 + 500), entry);
@@ -758,6 +769,7 @@ export class GameController {
         view.anim.y = -100;
         view.anim.x = 0;
         view.anim.z = -80;
+        view.applyAnim(); // constructor rendered the origin — see spawn()
         this.sceneMgr.scene.add(view.group);
         entry = { view, zone: { kind: "offscreen" } };
         this.cards.set(-(player * 1000 + 990), entry);
@@ -770,6 +782,7 @@ export class GameController {
       view.anim.y = isMe ? HAND_LIFT : -100;
       view.anim.x = 0;
       view.anim.z = isMe ? 26 : -80;
+      view.applyAnim(); // constructor rendered the origin — see spawn()
       this.sceneMgr.scene.add(view.group);
       entry = { view, zone: { kind: "hand", index: 0 } };
       this.cards.set(card.number, entry);
@@ -1600,7 +1613,11 @@ export class GameController {
       for (const entry of this.cards.values()) {
         const v = entry.view;
         if (isViewAnimating(v) || v.card.number === 0) {
-          animLog.frame(`card#${v.card.number}`, entry.zone.kind, v.anim, v.lift);
+          // Log the RENDERED position (group), not the anim intent: the two
+          // diverge when applyAnim wasn't called after an anim mutation, which
+          // is precisely the bug class the frame log exists to catch.
+          const g = v.group.position;
+          animLog.frame(`card#${v.card.number}`, entry.zone.kind, { x: g.x, y: g.y, z: g.z, flip: v.anim.flip, scale: v.anim.scale }, v.lift);
         }
       }
     }
