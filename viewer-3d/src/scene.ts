@@ -2,7 +2,7 @@ import * as THREE from "three";
 import { CARD_H, CARD_W } from "./cards";
 import { feltTexture, woodTexture } from "./textures";
 import { getTheme, onThemeChange, Theme, tweenColor } from "./theme";
-import { tween, Easing } from "./anim";
+import { cancelTweens, tween, Easing } from "./anim";
 
 /**
  * World layout (in world units, 1 unit ≈ 1cm at a real table):
@@ -124,6 +124,8 @@ export class SceneManager {
   private slotMeshes: THREE.Mesh[] = [];
   private slotMats: THREE.MeshStandardMaterial[] = [];
   private fog!: THREE.Fog;
+  private tableW = 0;
+  private tableH = 0;
 
   /** Area the camera frames (grows when players are present around the table). */
   contentHalfW = BOARD_HALF_W;
@@ -146,9 +148,11 @@ export class SceneManager {
     this.buildTable();
     this.buildSlots();
     this.applyTheme(getTheme(), false);
-    onThemeChange((theme) => this.applyTheme(theme, true));
+    this.unsubTheme = onThemeChange((theme) => this.applyTheme(theme, true));
     this.resize();
   }
+
+  private unsubTheme: () => void;
 
   /* ----------------------------- construction ----------------------------- */
 
@@ -189,8 +193,10 @@ export class SceneManager {
 
     // Table: wooden body with a felt top. Built as flat extruded rounded
     // rectangles (no cylinder scaling, which distorted + z-fought).
-    const tableW = BOARD_HALF_W * 2 + 16;
+    this.tableW = BOARD_HALF_W * 2 + 16;
+    const tableW = this.tableW;
     const tableH = BOARD_HALF_H * 2 + 28; // extra room for the hand area
+    this.tableH = tableH;
     const woodShape = roundedRect(tableW, tableH, 6);
     this.rimMat = new THREE.MeshStandardMaterial({
       map: woodTexture("#8d5a2b", "#5f3a17"),
@@ -261,15 +267,20 @@ export class SceneManager {
     const feltA = `#${new THREE.Color(theme.felt).getHexString()}`;
     const feltB = `#${new THREE.Color(theme.feltEmissive).getHexString()}`;
     this.tableMat.map = feltTexture(feltA, feltB);
+    // The cached texture carries a default repeat — re-apply the felt density
+    // or the grain stretches across the whole table after a theme switch.
+    this.tableMat.map.repeat.set(this.tableW / 34, this.tableH / 34);
     this.tableMat.needsUpdate = true;
     this.rimMat.map = woodTexture(
       `#${new THREE.Color(theme.wood).getHexString()}`,
       `#${new THREE.Color(theme.woodDark).getHexString()}`
     );
     this.rimMat.needsUpdate = true;
+    // Idle slot tint is theme-dependent; re-derive every slot's material (an
+    // active highlight is re-applied by the next updateStatus pass anyway).
+    this.clearSlotHighlights();
 
     if (duration === 0) {
-      (this.scene.background as THREE.Color | null) = null;
       this.scene.background = bg;
       this.fog.color.copy(bg);
       this.groundMat.color.copy(bg);
@@ -290,7 +301,10 @@ export class SceneManager {
       const fromKeyI = this.key.intensity;
       const fromFillI = this.fill.intensity;
       const fromHemiI = this.hemi.intensity;
+      // A second toggle mid-transition must supersede the first.
+      cancelTweens("theme");
       tween({
+        tag: "theme",
         duration,
         easing: Easing.easeInOutQuad,
         onUpdate: (t) => {
@@ -321,6 +335,8 @@ export class SceneManager {
   resize() {
     const w = this.container.clientWidth || 1;
     const h = this.container.clientHeight || 1;
+    // DPR can change at runtime (monitor switch, browser zoom).
+    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2.5));
     this.renderer.setSize(w, h);
     this.camera.aspect = w / h;
     this.camera.updateProjectionMatrix();
@@ -436,6 +452,8 @@ export class SceneManager {
   }
 
   dispose() {
+    // A theme change after dispose must not animate a dead scene.
+    this.unsubTheme();
     // Per-scene geometries + materials. Card views dispose themselves
     // (GameController); the cached card geometry and card/edge textures are
     // intentionally shared across launches and stay alive.

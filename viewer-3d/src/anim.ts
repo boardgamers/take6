@@ -47,6 +47,12 @@ export interface TweenOptions {
   onUpdate?: (t: number) => void;
   /** Called once when the tween completes. */
   onComplete?: () => void;
+  /**
+   * Called once when the tween is cancelled (superseded / cleared) before
+   * completing. `tweenViewAsync`/`tweenAsync` resolve their promise from here —
+   * a superseded await MUST settle or the log-application loop deadlocks.
+   */
+  onCancel?: () => void;
   /** Optional tag so groups of tweens can be cancelled at once. */
   tag?: string;
 }
@@ -54,6 +60,7 @@ export interface TweenOptions {
 interface ActiveTween extends Required<Pick<TweenOptions, "duration" | "delay" | "easing">> {
   onUpdate?: (t: number) => void;
   onComplete?: () => void;
+  onCancel?: () => void;
   tag?: string;
   start: number;
   done: boolean;
@@ -84,6 +91,7 @@ export function cancelTweensOf(view: object) {
     if (!tw.done && touchedViews.get(tw) === view) {
       tw.done = true;
       animLog.tween(tw.id, viewLabel(view), "cancel");
+      tw.onCancel?.();
     }
   }
 }
@@ -110,10 +118,8 @@ export function isViewAnimating(view: object): boolean {
 export function tweenView(view: object, options: TweenOptions): ActiveTween {
   cancelTweensOf(view);
   const tw = tween(options);
-  if (options.onUpdate) {
-    touchedViews.set(tw, view);
-    animLog.tween(tw.id, viewLabel(view), "start", `dur=${tw.duration}s${tw.delay ? ` delay=${tw.delay}s` : ""}${options.tag ? ` tag=${options.tag}` : ""}`);
-  }
+  touchedViews.set(tw, view);
+  animLog.tween(tw.id, viewLabel(view), "start", `dur=${tw.duration}s${tw.delay ? ` delay=${tw.delay}s` : ""}${options.tag ? ` tag=${options.tag}` : ""}`);
   return tw;
 }
 
@@ -131,6 +137,10 @@ export function tweenViewAsync(view: object, options: TweenOptions): Promise<voi
       },
       onComplete: () => {
         options.onComplete?.();
+        resolve();
+      },
+      onCancel: () => {
+        options.onCancel?.();
         resolve();
       }
     });
@@ -153,13 +163,17 @@ export function tween(options: TweenOptions): ActiveTween {
   return tw;
 }
 
-/** Returns a promise that resolves when the tween finishes. */
+/** Returns a promise that resolves when the tween finishes (or is cleared). */
 export function tweenAsync(options: TweenOptions): Promise<void> {
   return new Promise((resolve) => {
     tween({
       ...options,
       onComplete: () => {
         options.onComplete?.();
+        resolve();
+      },
+      onCancel: () => {
+        options.onCancel?.();
         resolve();
       }
     });
@@ -173,8 +187,9 @@ export function delay(seconds: number): Promise<void> {
 /** Cancel all tweens with the given tag. */
 export function cancelTweens(tag: string) {
   for (const tw of activeTweens) {
-    if (tw.tag === tag) {
+    if (tw.tag === tag && !tw.done) {
       tw.done = true;
+      tw.onCancel?.();
     }
   }
 }
@@ -194,10 +209,13 @@ export function flushTweens(tag: string) {
 
 export function updateTweens(dt: number) {
   time += dt;
-  for (let i = activeTweens.length - 1; i >= 0; i--) {
+  // Oldest-first, so when two live tweens touch the same target the NEWER one
+  // writes last and wins the frame. Splicing is deferred: callbacks may cancel
+  // other tweens or start new ones (appended — they run from the next frame,
+  // their `raw < 0` delay guard skips them this frame).
+  for (let i = 0; i < activeTweens.length; i++) {
     const tw = activeTweens[i];
     if (tw.done) {
-      activeTweens.splice(i, 1);
       continue;
     }
     const raw = (time - tw.start) / tw.duration;
@@ -213,12 +231,23 @@ export function updateTweens(dt: number) {
         animLog.tween(tw.id, viewLabel(view), "complete");
       }
       tw.onComplete?.();
+    }
+  }
+  for (let i = activeTweens.length - 1; i >= 0; i--) {
+    if (activeTweens[i].done) {
       activeTweens.splice(i, 1);
     }
   }
 }
 
+/** Drop every tween, resolving pending async awaiters (viewer dispose). */
 export function clearAllTweens() {
+  for (const tw of activeTweens) {
+    if (!tw.done) {
+      tw.done = true;
+      tw.onCancel?.();
+    }
+  }
   activeTweens.length = 0;
 }
 

@@ -242,10 +242,12 @@ export class UIManager {
       };
       sync();
       btn.addEventListener("click", () => toggleThemeOverride());
-      onThemeChange(sync);
+      this.unsubTheme = onThemeChange(sync);
       this.root.appendChild(btn);
     }
   }
+
+  private unsubTheme: (() => void) | null = null;
 
   setRound(round: number) {
     this.roundEl.innerHTML = `Round <b>${round}</b>`;
@@ -261,6 +263,10 @@ export class UIManager {
   }
 
   toast(text: string, warn = false, durationMs = 2200) {
+    // A burst of events must not pile a column of toasts over the board.
+    while (this.toastsEl.children.length >= 3) {
+      this.toastsEl.firstElementChild!.remove();
+    }
     const el = document.createElement("div");
     el.className = "t6-toast" + (warn ? " t6-warn" : "");
     el.textContent = text;
@@ -269,11 +275,16 @@ export class UIManager {
     setTimeout(() => el.remove(), durationMs + 400);
   }
 
+  private lastMe: number | undefined;
+
   updatePlayers(G: GameState, meIndex: number | undefined) {
     // Spectators (no "me") don't get a personal score pill.
     this.myScoreEl.style.display = meIndex === undefined ? "none" : "";
-    // Rebuild badges if player count changed
-    if (this.badges.length !== G.players.length) {
+    // Rebuild badges when the player count OR the local seat changes: the
+    // first state often renders before the "player" event, building a corner
+    // badge for the local player that would otherwise never be removed.
+    if (this.badges.length !== G.players.length || meIndex !== this.lastMe) {
+      this.lastMe = meIndex;
       this.leftPlayers.innerHTML = "";
       this.rightPlayers.innerHTML = "";
       this.badges = [];
@@ -306,11 +317,17 @@ export class UIManager {
       const thinking = active && pl.isAI;
       badge.classList.toggle("t6-active", active);
       badge.classList.toggle("t6-thinking", thinking);
-      badge.innerHTML = `
+      const html = `
         <span class="t6-dot" style="background:${playerColor(i)}"></span>
         <span class="t6-pname">${escapeHtml(pl.name ?? `Player ${i + 1}`)}</span>
         <span class="t6-pts">${BULL_ICON}${pl.points}</span>
       `;
+      // Only touch the DOM on real changes — re-creating the dot node every
+      // update restarts its "thinking" pulse animation mid-cycle.
+      if (badge.dataset.html !== html) {
+        badge.dataset.html = html;
+        badge.innerHTML = html;
+      }
     });
 
     this.setRound(G.round);
@@ -354,6 +371,8 @@ export class UIManager {
   }
 
   dispose() {
+    this.unsubTheme?.();
+    this.unsubTheme = null;
     this.root.remove();
     this.styleEl.remove();
   }

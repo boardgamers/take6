@@ -22,7 +22,7 @@ import { applyHostTheme } from "./theme";
  * Outbound text lines for the host sidebar use the "uplink:" prefix
  * ("uplink:addLog") so the forwarder below never re-fires for inbound objects.
  */
-export function launch(selector: string | HTMLElement): EventEmitter {
+export function launch(selector: string | HTMLElement, opts?: { standalone?: boolean }): EventEmitter {
   const container =
     typeof selector === "string"
       ? (document.querySelector(selector) as HTMLElement | null)
@@ -30,11 +30,14 @@ export function launch(selector: string | HTMLElement): EventEmitter {
   if (!container) {
     throw new Error(`take6-viewer-3d: no element matches selector "${selector}"`);
   }
+  if (container.querySelector(".t6-root")) {
+    throw new Error("take6-viewer-3d: already launched in this container");
+  }
 
   const item = new EventEmitter();
   const inner = new EventEmitter();
 
-  const controller = new GameController(container, { emitter: inner, standalone: false });
+  const controller = new GameController(container, { emitter: inner, standalone: !!opts?.standalone });
 
   // Player moves go out
   inner.on("move", (move: Move) => item.emit("move", move));
@@ -82,16 +85,18 @@ export function launch(selector: string | HTMLElement): EventEmitter {
 
   // The site notifies the iframe about theme changes through a raw postMessage
   // (not re-emitted on the emitter)
-  if (typeof window !== "undefined") {
-    window.addEventListener("message", (event) => {
-      if (event.data?.type === "theme" && typeof event.data.dark === "boolean") {
-        applyHostTheme(event.data.dark);
-      }
-    });
-  }
+  const onMessage = (event: MessageEvent) => {
+    if (event.data?.type === "theme" && typeof event.data.dark === "boolean") {
+      applyHostTheme(event.data.dark);
+    }
+  };
+  window.addEventListener("message", onMessage);
 
   // Cleanup hook for embedders that want it
-  (item as any).dispose = () => controller.dispose();
+  (item as any).dispose = () => {
+    window.removeEventListener("message", onMessage);
+    controller.dispose();
+  };
 
   return item;
 }

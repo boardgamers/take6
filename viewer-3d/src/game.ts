@@ -3,7 +3,7 @@ import { EventEmitter } from "events";
 import { cloneDeep } from "lodash";
 import type { AvailableMoves, Card, GameState, LogItem, Move } from "take6-engine";
 import { ended, GameEventName, MoveName, Phase, reconstructState } from "take6-engine";
-import { Easing, Spring, cancelTweensOf, delay, isViewAnimating, tweenView, tweenViewAsync, updateTweens } from "./anim";
+import { Easing, Spring, cancelTweensOf, clearAllTweens, delay, isViewAnimating, tweenView, tweenViewAsync, updateTweens } from "./anim";
 import { advance } from "./anim-controls";
 import { mountAnimControls } from "./anim-controls-panel";
 import { animLog } from "./anim-log";
@@ -61,6 +61,8 @@ export class GameController {
    * otherwise be re-accepted when a full `start: 0` redelivery arrives.
    */
   private acceptedLog = 0;
+  /** Bumped on every full-state resync; a running applyLoop abandons when it changes. */
+  private epoch = 0;
 
   private cards = new Map<number, CardEntry>();
   /**
@@ -108,6 +110,10 @@ export class GameController {
     this.bindInput();
 
     window.addEventListener("resize", this.onResize);
+    // The container can be resized by page layout without a window resize
+    // (embeds, split panes) — observe it directly.
+    this.resizeObserver = new ResizeObserver(() => this.onResize());
+    this.resizeObserver.observe(this.ui.root);
     this.onResize();
     this.renderer_loop();
 
@@ -115,11 +121,19 @@ export class GameController {
     (window as any).__take6ctrl = this;
   }
 
+  private resizeObserver: ResizeObserver;
+
   /* --------------------------- wiring ---------------------------- */
 
   private bindEmitter() {
     this.emitter.on("state", (G: GameState) => this.onFullState(G));
     this.emitter.on("player", ({ index }: { index: number }) => {
+      // The host re-sends "player" on every handshake (e.g. after a move
+      // acknowledgement). A redundant re-post must NOT rebuild the scene:
+      // the synchronous rebuild snaps cards out of their in-flight animations.
+      if (index === this.me) {
+        return;
+      }
       this.me = index;
       if (this.G) {
         this.syncAll(false);
@@ -163,6 +177,10 @@ export class GameController {
     this.G = cloneDeep(G);
     this.logQueue = [];
     this.acceptedLog = this.G.log.length;
+    // Anything a still-running applyLoop does after this belongs to the old
+    // world — the epoch bump makes it abandon on its next await boundary.
+    this.epoch++;
+    this.pendingAvailableMoves = null;
     this.syncAll(true);
     // Host sidebar: full refresh of the textual log
     this.emitter.emit("replaceLog", this.G.log.map((item) => logToText(this.G!, item, this.me)).flat());
@@ -177,14 +195,21 @@ export class GameController {
     this.ui.updatePlayers(this.G, this.me);
     this.rebuildCards(animated);
     this.updateStatus();
+    // Resyncing into a finished game must re-show the end screen.
+    this.checkEnd();
     this.emitter.emit("ready");
   }
 
   private rebuildCards(animated: boolean) {
     const G = this.G!;
-    // Drop card views that no longer exist
+    // Interaction state points at views this rebuild may dispose.
+    this.clearHover();
+    this.drag = null;
+    // Drop card views that no longer exist. Hidden cards (number 0) are NEVER
+    // alive by number — every placeholder is re-derived below under its
+    // synthetic key; letting 0 into the set would keep a shared 0-keyed entry.
     const alive = new Set<number>();
-    const keep = (card: Card | null | undefined) => card && alive.add(card.number);
+    const keep = (card: Card | null | undefined) => card && card.number > 0 && alive.add(card.number);
     for (const row of G.rows) {
       row.forEach(keep);
     }
@@ -257,11 +282,36 @@ export class GameController {
         this.flyTo(entry, 0, -80 - p * 4, 0, { faceUp: false, y: CARD_T, animated: false, scale: 0.01 });
       }
       if (pl.faceDownCard) {
-        const faceUp = G.phase === Phase.PlaceCard && pl.faceDownCard.number !== 0;
-        const entry = spawn(pl.faceDownCard, { kind: "pick", player: p }, faceUp);
+        const known = pl.faceDownCard.number !== 0;
+        // A pick with a known number that already reads face-up stays face-up:
+        // a card cannot be un-revealed, no matter what a resync's phase says.
+        const existing = known ? this.cards.get(pl.faceDownCard.number) : undefined;
+        const alreadyRevealed = !!existing && existing.view.anim.flip < Math.PI / 2;
+        const faceUp = alreadyRevealed || (G.phase === Phase.PlaceCard && known);
+        let entry: CardEntry;
+        if (known) {
+          entry = spawn(pl.faceDownCard, { kind: "pick", player: p }, faceUp);
+        } else {
+          // Hidden picks all carry number 0 — routing them through spawn()
+          // would key every player's pick under 0 and share ONE entry across
+          // players (a reveal then morphs one card into another). Key each
+          // placeholder synthetically per player instead. The alive-sweep
+          // above already dropped any previous synthetic entries.
+          const view = new CardView({ number: 0, points: 0 });
+          view.anim.flip = Math.PI;
+          view.anim.y = CARD_T;
+          if (animated) {
+            // Same entrance as spawn(): grow in while dropping onto the slot.
+            view.anim.scale = 0.01;
+            view.anim.y = 12;
+          }
+          entry = { view, zone: { kind: "pick", player: p } };
+          this.cards.set(-(p * 1000 + 500), entry);
+          this.sceneMgr.scene.add(view.group);
+        }
         const pos = pickSlot(p, G.players.length);
         this.flyTo(entry, pos.x, pos.z, pos.rotZ, { faceUp, y: CARD_T, animated, zIndex: 40 + p, preserveFlip: true });
-        if (entry.view.card.number === 0) {
+        if (!known) {
           this.hiddenPicks.set(p, entry);
         }
       } else {
@@ -292,8 +342,19 @@ export class GameController {
     if (!this.G || !data || !Array.isArray(data.log)) {
       return;
     }
+    // Live log slices must not animate onto a reconstructed past state; the
+    // replayEnd handler refetches the authoritative state anyway.
+    if (this.replaying) {
+      return;
+    }
+    // A slice starting past what we accepted means a delivery was missed —
+    // applying it would silently skip moves. Resync instead.
+    if (data.start > this.acceptedLog) {
+      this.emitter.emit("fetchState");
+      return;
+    }
     // Ignore stale / duplicate logs
-    const fresh = data.log.slice(Math.max(0, this.acceptedLog - data.start));
+    const fresh = data.log.slice(this.acceptedLog - data.start);
     if (fresh.length === 0 && !data.availableMoves) {
       return;
     }
@@ -315,19 +376,21 @@ export class GameController {
   }
 
   private async applyLoop() {
-    try {
-      while (this.logQueue.length > 0) {
-        const item = this.logQueue.shift()!;
-        await this.applyLogItem(item);
-        if (this.G) {
-          this.G.log.push(item);
-          this.emitter.emit("uplink:addLog", logToText(this.G, item, this.me));
-        }
+    const epoch = this.epoch;
+    while (this.logQueue.length > 0) {
+      const item = this.logQueue.shift()!;
+      await this.applyLogItem(item);
+      if (epoch !== this.epoch) {
+        // A full-state resync replaced the world while we were animating.
+        // Its log already contains this item — pushing it would duplicate it.
+        return;
       }
-      this.finishLogApplication();
-    } catch (err) {
-      console.error("take6-3d: error while applying log", err);
+      if (this.G) {
+        this.G.log.push(item);
+        this.emitter.emit("uplink:addLog", logToText(this.G, item, this.me));
+      }
     }
+    this.finishLogApplication();
   }
 
   private pendingAvailableMoves: AvailableMoves[] | null = null;
@@ -343,6 +406,11 @@ export class GameController {
       });
       this.pendingAvailableMoves = null;
     }
+    // Hover is only re-evaluated on pointermove — if the choose phase ended
+    // while the cursor sat still, the lifted card would stay lifted forever.
+    if (this.hoverEntry && !this.myMoves()?.chooseCard) {
+      this.clearHover();
+    }
     this.ui.updatePlayers(this.G, this.me);
     this.updateStatus();
     this.emitter.emit("state:updated");
@@ -355,7 +423,11 @@ export class GameController {
     }
     switch (item.type) {
       case "phase":
-        // Cosmetic only; status text updated at the end of the batch.
+        // Keep the mirror's phase truthful: rebuildCards decides whether a
+        // staged pick lies face-up from it. A stale phase (e.g. still "choose"
+        // after a reveal) makes any mid-game resync snap revealed picks back
+        // face-down — the "both cards flip down right after the reveal" bug.
+        this.G.phase = item.phase;
         return;
       case "event":
         switch (item.event.name) {
@@ -399,14 +471,18 @@ export class GameController {
     this.ui.toast(`Round ${round}`);
     this.ui.hideEndScreen();
 
-    // Existing table cards (taken rows etc.) fly away
+    // Existing table cards fly away. Pick-zone entries are swept too: a pick
+    // can only still exist here through bookkeeping drift, and pruneStaleCards
+    // deliberately spares hidden picks — leaving one would freeze it at the
+    // pick arc for the whole next round.
     const gone: Promise<void>[] = [];
     for (const [num, entry] of this.cards) {
-      if (entry.zone.kind === "board" || entry.zone.kind === "taken") {
+      if (entry.zone.kind === "board" || entry.zone.kind === "taken" || entry.zone.kind === "pick") {
         gone.push(this.flyAway(entry));
         this.cards.delete(num);
       }
     }
+    this.hiddenPicks.clear();
     await Promise.all(gone);
 
     // New row starters drop in with a bounce
@@ -488,7 +564,15 @@ export class GameController {
           // re-apply so the card actually moves offscreen.
           view.applyAnim();
           this.sceneMgr.scene.add(view.group);
-          this.cards.set(card.number || -(p * 1000 + i + 1), { view, zone: { kind: "offscreen" } });
+          const key = card.number || -(p * 1000 + i + 1);
+          // A stand-in from a previous resync may still hold this key — orphaning
+          // it would leave an undisposed view in the scene forever.
+          const old = this.cards.get(key);
+          if (old) {
+            this.sceneMgr.scene.remove(old.view.group);
+            old.view.dispose();
+          }
+          this.cards.set(key, { view, zone: { kind: "offscreen" } });
         }
       });
     });
@@ -499,6 +583,9 @@ export class GameController {
   private async applyReveal(cards: Card[]) {
     const G = this.G!;
     animLog.call("applyReveal", `cards=[${cards.map((c) => c.number)}]`);
+    // The engine never logs phase items — advance the mirror's phase here, or
+    // any resync between reveal and placement reads a stale "choose" phase.
+    G.phase = Phase.PlaceCard;
     const flips: Promise<void>[] = [];
     const nPlayers = G.players.length;
     cards.forEach((card, p) => {
@@ -551,6 +638,12 @@ export class GameController {
         this.sceneMgr.scene.add(view.group);
         entry = { view, zone: { kind: "pick", player: p } };
         this.cards.set(card.number !== 0 ? card.number : -(p * 1000 + 500), entry);
+        if (card.number !== 0) {
+          // Keep the mirror authoritative — applyPlace reads faceDownCard.
+          // Without this, a materialized reveal leaves the mirror's masked
+          // {number: 0} in place and applyPlace places a blank card.
+          G.players[p].faceDownCard = card;
+        }
         resolvedFrom = "materialized";
       }
       entry.zone = { kind: "pick", player: p };
@@ -610,6 +703,14 @@ export class GameController {
       keep(pl.faceDownCard);
     }
     const trackedHidden = new Set<CardEntry>(this.hiddenPicks.values());
+    const drop = (key: number, entry: CardEntry) => {
+      if (entry === this.hoverEntry) {
+        this.clearHover();
+      }
+      this.sceneMgr.scene.remove(entry.view.group);
+      entry.view.dispose();
+      this.cards.delete(key);
+    };
     for (const [key, entry] of this.cards) {
       if (entry.view.card.number === 0) {
         // Hidden placeholders are managed through hiddenPicks (pick slots)
@@ -617,17 +718,13 @@ export class GameController {
         // (e.g. a placed pick that was never resolved because the game ended
         // mid-reveal) can only remain if it occupies a board slot.
         if (!trackedHidden.has(entry) && entry.zone.kind !== "board" && entry.zone.kind !== "offscreen") {
-          this.sceneMgr.scene.remove(entry.view.group);
-          entry.view.dispose();
-          this.cards.delete(key);
+          drop(key, entry);
         }
         continue;
       }
       if (!alive.has(entry.view.card.number)) {
         this.hiddenPicks.forEach((v, p) => v === entry && this.hiddenPicks.delete(p));
-        this.sceneMgr.scene.remove(entry.view.group);
-        entry.view.dispose();
-        this.cards.delete(key);
+        drop(key, entry);
       }
     }
   }
@@ -746,7 +843,9 @@ export class GameController {
     const pl = G.players[player];
     const card = pl.faceDownCard;
     if (!card) {
-      return;
+      // Fail loud: silently skipping the item would desync every later column
+      // in this row and strand the player's pick at the arc forever.
+      throw new Error(`take6-3d: placeCard for player ${player} but the mirror has no faceDownCard`);
     }
 
     let entry = this.cards.get(card.number);
@@ -824,29 +923,6 @@ export class GameController {
       );
     }
 
-    // Shift existing row cards right to make room visually (they keep cols)
-    rowCards.forEach((c, i) => {
-      const e = this.cards.get(c.number);
-      if (!e) {
-        return;
-      }
-      const target = boardSlot(row, i);
-      const v = e.view;
-      const sx = v.anim.x;
-      const sz = v.anim.z;
-      anims.push(
-        tweenViewAsync(v, {
-          duration: 0.45,
-          easing: Easing.easeInOutCubic,
-          onUpdate: (t) => {
-            v.anim.x = THREE.MathUtils.lerp(sx, target.x, t);
-            v.anim.z = THREE.MathUtils.lerp(sz, target.z, t);
-            v.applyAnim();
-          }
-        })
-      );
-    });
-
     await Promise.all(anims);
 
     if (replace) {
@@ -880,6 +956,9 @@ export class GameController {
       G.rows[row].push(card);
     }
     pl.faceDownCard = null;
+    if (G.players.every((p) => !p.faceDownCard)) {
+      G.phase = Phase.ChooseCard;
+    }
 
     this.ui.updatePlayers(G, this.me);
     this.updateStatus();
@@ -937,11 +1016,16 @@ export class GameController {
       sf = targetFlip === 0 ? Math.min(sf, Math.PI) : Math.max(sf, Math.PI);
     }
     if (!opts.animated) {
+      // Instant snap: land exactly on the target (the clamped `sf` is a tween
+      // START value — snapping to it would leave e.g. a face-down card
+      // face-down when faceUp was requested). Cancel in-flight tweens or the
+      // next frames drag the card right back toward the old tween's target.
+      cancelTweensOf(view);
       view.anim.x = x;
       view.anim.y = opts.y;
       view.anim.z = z;
       view.anim.rotZ = rotZ;
-      view.anim.flip = sf;
+      view.anim.flip = targetFlip;
       view.anim.scale = targetScale;
       view.applyAnim();
       return;
@@ -1086,6 +1170,7 @@ export class GameController {
       log: []
     };
     this.logQueue = [];
+    this.epoch++;
     this.G = reconstructState(base as unknown as GameState, this.futureG.log.slice(0, to));
     this.acceptedLog = this.G.log.length;
     this.syncAll(false);
@@ -1138,13 +1223,18 @@ export class GameController {
 
   private onPointerDown = (ev: PointerEvent) => {
     const moves = this.myMoves();
-    if (this.drag) {
+    // Non-primary buttons must not interact: a right-click drag never gets its
+    // pointerup (the context menu eats it), leaving a stuck drag whose card the
+    // NEXT left click would then play.
+    if (this.drag || ev.button !== 0) {
       return;
     }
 
     // Place phase: the player's staged card needs a row. Support both tapping
     // a row directly and dragging the staged card onto a row.
-    if (moves?.placeCard) {
+    // selectedRow !== null means a placement is already in flight — a second
+    // tap must not send a duplicate placeCard.
+    if (moves?.placeCard && this.selectedRow === null) {
       const tablePos = this.sceneMgr.screenToTable(ev.clientX, ev.clientY);
       const row = this.sceneMgr.rowAtPoint(tablePos.x, tablePos.z);
       const target = row === null ? null : moves.placeCard.find((m) => m.row === row);
@@ -1197,6 +1287,11 @@ export class GameController {
   }
 
   private beginDrag(entry: CardEntry, ev: PointerEvent) {
+    // The grab takes over the card completely: a still-running flight tween
+    // would keep writing flip/scale under the drag, and a hover lift would
+    // stack on the drag lift and stick after the drop.
+    cancelTweensOf(entry.view);
+    this.clearHover();
     const tablePos = this.sceneMgr.screenToTable(ev.clientX, ev.clientY);
     entry.view.zIndex = 500;
     this.drag = {
@@ -1227,8 +1322,9 @@ export class GameController {
 
   private onPointerMove = (ev: PointerEvent) => {
     if (!this.drag || ev.pointerId !== this.drag.pointerId) {
-      // Hover effect on desktop
-      if (ev.pointerType === "mouse") {
+      // Hover effect on desktop — but never while ANY drag is active (a mouse
+      // move during a touch drag would lift the dragged card itself).
+      if (!this.drag && ev.pointerType === "mouse") {
         this.updateHover(ev);
       }
       return;
@@ -1312,8 +1408,11 @@ export class GameController {
     }
     // A hover target is only a hand card that can be chosen right now; a card
     // played under a still cursor (or a stale entry after a resync) must drop
-    // its lift without waiting for the next pointermove.
-    if (entry && entry.zone.kind !== "hand") {
+    // its lift without waiting for the next pointermove. A card mid-animation
+    // must not be engaged either: the hover lift goes through tweenView, which
+    // would CANCEL the card's flight and freeze it mid-air. (The current
+    // hoverEntry is exempt — its own lift tween counts as animating.)
+    if (entry && (entry.zone.kind !== "hand" || (entry !== this.hoverEntry && isViewAnimating(entry.view)))) {
       entry = null;
     }
     if (this.hoverEntry && this.hoverEntry !== entry) {
@@ -1336,6 +1435,17 @@ export class GameController {
     this.drag = null;
     this.sceneMgr.clearSlotHighlights();
 
+    // An aborted pointer (browser gesture, palm rejection, tab switch) must
+    // NEVER commit a move — only return the card to where it came from.
+    if (ev.type === "pointercancel") {
+      if (d.entry.zone.kind === "pick") {
+        this.resetStagedCard(d.entry);
+      } else {
+        this.resetDraggedCard(d.entry, true);
+      }
+      return;
+    }
+
     const G = this.G!;
     const me = this.me!;
     const moves = this.myMoves();
@@ -1357,7 +1467,10 @@ export class GameController {
       return;
     }
 
-    if (moves?.chooseCard) {
+    // The dragged card must still be a hand card: a concurrently applied move
+    // (auto-resolve, resync) may have re-zoned it mid-drag, and playing a card
+    // that already sits on the board/pick would double-send it.
+    if (moves?.chooseCard && d.entry.zone.kind === "hand") {
       if (!d.moved) {
         // Tap: play the card straight to the pick zone
         this.sendMove({ name: MoveName.ChooseCard, data: { number: card.number, points: card.points } });
@@ -1383,6 +1496,8 @@ export class GameController {
     if (entry.zone.kind !== "pick" || this.me === undefined) {
       return;
     }
+    // Undo beginDrag's zIndex boost, or the card keeps rendering above everything.
+    entry.view.zIndex = 40 + this.me;
     const pos = pickSlot(this.me, this.G!.players.length);
     const v = entry.view;
     const sx = v.anim.x;
@@ -1512,6 +1627,10 @@ export class GameController {
   dispose() {
     this.disposed = true;
     window.removeEventListener("resize", this.onResize);
+    this.resizeObserver.disconnect();
+    // Pending tweens hold closures over views we are about to dispose; they'd
+    // fire against them when the next viewer instance drives updateTweens.
+    clearAllTweens();
     this.devToolsDispose?.();
     this.devToolsDispose = null;
     this.unsubTheme?.();

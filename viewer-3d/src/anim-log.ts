@@ -16,7 +16,8 @@
 export type AnimLogEntry =
   | { kind: "tween"; t: number; id: number; card: string; action: "start" | "cancel" | "complete"; detail?: string }
   | { kind: "call"; t: number; name: string; detail?: string }
-  | { kind: "frame"; t: number; card: string; x: number; y: number; z: number; flip: number; scale: number; lift: number; zone: string };
+  | { kind: "frame"; t: number; card: string; x: number; y: number; z: number; flip: number; scale: number; lift: number; zone: string }
+  | { kind: "snap"; t: number; card: string; prop: string; from: number; to: number; stack: string };
 
 const CAPACITY = 4000;
 
@@ -85,6 +86,19 @@ class AnimLog {
     });
   }
 
+  /** A property changed by a large amount in a single assignment — record who did it. */
+  snap(card: string, prop: string, from: number, to: number) {
+    if (!this.enabled) {
+      return;
+    }
+    const stack = (new Error().stack ?? "")
+      .split("\n")
+      .slice(2, 8)
+      .map((l) => l.trim())
+      .join(" ← ");
+    this.push({ kind: "snap", t: now(), card, prop, from: r(from), to: r(to), stack });
+  }
+
   clear() {
     this.entries = [];
     this.head = 0;
@@ -140,6 +154,8 @@ function formatEntry(e: AnimLogEntry): string {
       return `${t} CALL  ${e.name}${e.detail ? "  " + e.detail : ""}`;
     case "frame":
       return `${t} FRAME ${e.card.padEnd(8)} [${e.zone}] pos=(${e.x},${e.y},${e.z}) flip=${e.flip} scale=${e.scale} lift=${e.lift}`;
+    case "snap":
+      return `${t} SNAP  ${e.card.padEnd(8)} ${e.prop} ${e.from} → ${e.to}\n              at ${e.stack}`;
   }
 }
 

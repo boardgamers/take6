@@ -1,5 +1,6 @@
 import * as THREE from "three";
 import type { Card } from "take6-engine";
+import { animLog } from "./anim-log";
 import { getTheme, onThemeChange } from "./theme";
 
 /**
@@ -174,8 +175,10 @@ function primeTextureCache() {
   }
   texturePrimedTheme = theme.name;
   persistentTextures.add(cardBackTexture());
-  for (let number = 1; number <= 104; number++) {
-    persistentTextures.add(cardFaceTexture({ number, points: cardPoints(number) }));
+  // Include the hidden-card face (number 0): every face-down placeholder
+  // shares it via the cache, so it must never be disposed by setCard/dispose.
+  for (let number = 0; number <= 104; number++) {
+    persistentTextures.add(cardFaceTexture({ number, points: number === 0 ? 0 : cardPoints(number) }));
   }
 }
 
@@ -411,6 +414,23 @@ export class CardView {
     this.front.castShadow = true;
     this.group.add(this.front);
     this.applyAnim();
+
+    // Debug tap: record who flips a card by a large amount in one assignment
+    // (an instant snap, not a tween step) — with the call stack. Tween steps
+    // move flip in small increments and never trigger this.
+    if (animLog.enabled) {
+      let flip = this.anim.flip;
+      const view = this;
+      Object.defineProperty(this.anim, "flip", {
+        get: () => flip,
+        set(v: number) {
+          if (Math.abs(v - flip) > 0.5) {
+            animLog.snap(`card#${view.card.number}`, "flip", flip, v);
+          }
+          flip = v;
+        }
+      });
+    }
   }
 
   /** Swap the face texture (used when a hidden card is revealed, number 0 -> real). */
@@ -418,6 +438,10 @@ export class CardView {
     this.card = card;
     this.points = card.points;
     this.swapMap(this.frontMaterial, cardFaceTexture(card));
+  }
+
+  refreshFace() {
+    this.swapMap(this.frontMaterial, cardFaceTexture(this.card));
   }
 
   refreshBack() {
@@ -471,6 +495,7 @@ export class CardView {
 export function refreshCardTextures(cards: Iterable<CardView>) {
   primeTextureCache();
   for (const card of cards) {
+    card.refreshFace();
     card.refreshBack();
   }
 }

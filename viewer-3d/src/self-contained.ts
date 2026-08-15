@@ -10,7 +10,7 @@ import launch from "./launch";
  * `numPlayers` argument.
  */
 export function launchSelfContained(selector: string | HTMLElement = "#app", numPlayers?: number) {
-  const emitter = launch(selector);
+  const emitter = launch(selector, { standalone: true });
 
   // Dev harness only: floating animation controls (record / pause / step /
   // copy). Mounted into the viewer's positioned root so it floats over the
