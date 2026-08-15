@@ -4,6 +4,7 @@
  * Tweens are driven by wall-clock time so multiple tweens compose
  * deterministically into timelines (chainable via `.then()`).
  */
+import { animLog } from "./anim-log";
 
 export const Easing = {
   linear: (t: number) => t,
@@ -56,6 +57,17 @@ interface ActiveTween extends Required<Pick<TweenOptions, "duration" | "delay" |
   tag?: string;
   start: number;
   done: boolean;
+  /** Sequential id for log correlation. */
+  id: number;
+}
+
+let nextTweenId = 1;
+
+/** Best-effort label for the view a tween animates (card number or "view"). */
+function viewLabel(view: object): string {
+  const v = view as { card?: { number?: number }; number?: number };
+  const num = v.card?.number ?? v.number;
+  return num !== undefined ? `card#${num}` : "view";
 }
 
 const activeTweens: ActiveTween[] = [];
@@ -71,12 +83,23 @@ export function cancelTweensOf(view: object) {
   for (const tw of activeTweens) {
     if (!tw.done && touchedViews.get(tw) === view) {
       tw.done = true;
+      animLog.tween(tw.id, viewLabel(view), "cancel");
     }
   }
 }
 
 /** Registry tween → view it animates (see `tweenView`). */
 const touchedViews = new WeakMap<ActiveTween, object>();
+
+/** True while any not-done tween is animating this view. */
+export function isViewAnimating(view: object): boolean {
+  for (const tw of activeTweens) {
+    if (!tw.done && touchedViews.get(tw) === view) {
+      return true;
+    }
+  }
+  return false;
+}
 
 /**
  * Start a tween that animates the given view, cancelling any still-active
@@ -89,6 +112,7 @@ export function tweenView(view: object, options: TweenOptions): ActiveTween {
   const tw = tween(options);
   if (options.onUpdate) {
     touchedViews.set(tw, view);
+    animLog.tween(tw.id, viewLabel(view), "start", `dur=${tw.duration}s${tw.delay ? ` delay=${tw.delay}s` : ""}${options.tag ? ` tag=${options.tag}` : ""}`);
   }
   return tw;
 }
@@ -122,7 +146,8 @@ export function tween(options: TweenOptions): ActiveTween {
     onComplete: options.onComplete,
     tag: options.tag,
     start: time + (options.delay ?? 0),
-    done: false
+    done: false,
+    id: nextTweenId++
   };
   activeTweens.push(tw);
   return tw;
@@ -183,6 +208,10 @@ export function updateTweens(dt: number) {
     tw.onUpdate?.(tw.easing(t));
     if (t >= 1) {
       tw.done = true;
+      const view = touchedViews.get(tw);
+      if (view) {
+        animLog.tween(tw.id, viewLabel(view), "complete");
+      }
       tw.onComplete?.();
       activeTweens.splice(i, 1);
     }
