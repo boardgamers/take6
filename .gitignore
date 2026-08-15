@@ -8,3 +8,4 @@ coverage/
 .parcel-cache/
 dist-lib/
 .playwright-mcp/
+.pnpm-store
