@@ -10,9 +10,12 @@ import { applyHostTheme } from "./theme";
  *  - in:  "state" (GameState), "player" ({index}),
  *         "gamelog" (either {log, availableMoves} after a fetchLog, or
  *         {start, end?, data: {log, availableMoves}} after a move),
- *         "preferences" ({dark?: boolean}), "replay:start", "replay:to" (index), "replay:end"
+ *         "preferences" ({dark?: boolean, devMode?: boolean} — devMode mounts
+ *         the debug controls panel), "replay:start", "replay:to" (index),
+ *         "replay:end", "requestDebugInfo" (the platform's copy-debug-info button)
  *  - out: "move", "fetchState", "fetchLog", "ready", "addLog" (string[]),
  *         "replaceLog" (string[]), "replay:info",
+ *         "debugInfo" (JSON payload answering requestDebugInfo),
  *         "player:clicked" ({index, name}) — the host navigates to /user/<name>
  *
  * Inner-emitter naming: inbound game-log slices arrive on the inner emitter as
@@ -66,11 +69,20 @@ export function launch(selector: string | HTMLElement): EventEmitter {
   item.addListener("replay:to", (to: number) => inner.emit("replayTo", to));
   item.addListener("replay:end", () => inner.emit("replayEnd"));
 
-  // Host UI preferences: the 3D viewer only cares about dark mode
-  item.addListener("preferences", (prefs: { dark?: boolean } | null) => {
+  // Host UI preferences: dark mode, plus the host's dev-mode signal which
+  // mounts the same debug controls the local harness uses.
+  item.addListener("preferences", (prefs: { dark?: boolean; devMode?: boolean } | null) => {
     if (prefs && typeof prefs.dark === "boolean") {
       applyHostTheme(prefs.dark);
     }
+    if (prefs?.devMode === true) {
+      controller.enableDevTools();
+    }
+  });
+
+  // Platform debug FAB: answer with a full controller snapshot + anim log.
+  item.addListener("requestDebugInfo", () => {
+    item.emit("debugInfo", controller.collectDebugInfo());
   });
 
   // The site notifies the iframe about theme changes through a raw postMessage

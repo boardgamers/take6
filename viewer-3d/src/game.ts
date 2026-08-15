@@ -5,6 +5,7 @@ import type { AvailableMoves, Card, GameState, LogItem, Move } from "take6-engin
 import { ended, GameEventName, MoveName, Phase, reconstructState } from "take6-engine";
 import { Easing, Spring, cancelTweensOf, delay, isViewAnimating, tweenView, tweenViewAsync, updateTweens } from "./anim";
 import { advance } from "./anim-controls";
+import { mountAnimControls } from "./anim-controls-panel";
 import { animLog } from "./anim-log";
 import { CARD_H, CARD_T, CARD_W, CardView, refreshCardTextures } from "./cards";
 import { logToText } from "./log-text";
@@ -1439,6 +1440,38 @@ export class GameController {
 
   /* --------------------------- testing ---------------------------- */
 
+  /**
+   * Full debug payload for the platform's "copy debug info" button
+   * (requestDebugInfo → debugInfo). The cards dump mirrors what the anim log
+   * frames record — zone/position/flip per view — because that is the data
+   * that actually cracks "card frozen on the table" class bugs.
+   */
+  collectDebugInfo() {
+    const r = (n: number) => Math.round(n * 100) / 100;
+    return {
+      state: this.debugState(),
+      cards: [...this.cards.entries()].map(([key, e]) => ({
+        key,
+        number: e.view.card.number,
+        zone: e.zone,
+        pos: { x: r(e.view.group.position.x), y: r(e.view.group.position.y), z: r(e.view.group.position.z) },
+        flip: r(e.view.anim.flip),
+        scale: r(e.view.anim.scale)
+      })),
+      hiddenPicks: [...this.hiddenPicks.keys()],
+      animLog: animLog.dump()
+    };
+  }
+
+  private devToolsDispose: (() => void) | null = null;
+
+  /** Mount the dev harness controls (anim record/pause/step). Idempotent. */
+  enableDevTools() {
+    if (!this.devToolsDispose) {
+      this.devToolsDispose = mountAnimControls(this.ui.root);
+    }
+  }
+
   /** Internal snapshot, exposed for tests/debugging (window.__take6ctrl). */
   debugState() {
     const G = this.G;
@@ -1502,6 +1535,8 @@ export class GameController {
   dispose() {
     this.disposed = true;
     window.removeEventListener("resize", this.onResize);
+    this.devToolsDispose?.();
+    this.devToolsDispose = null;
     this.unsubTheme?.();
     this.unsubTheme = null;
     this.unbindInput();
