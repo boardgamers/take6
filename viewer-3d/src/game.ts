@@ -666,6 +666,18 @@ export class GameController {
     const view = entry.view;
     view.zIndex = 40 + player;
 
+    if (hidden) {
+      // The offscreen stand-in sits far below the table (y=-100, scale 0.01);
+      // flying it from there sweeps it up through the visible board. A hidden
+      // pick is anonymous, so materialize it just above the pick slot and let
+      // the tween be a short settle-in instead.
+      view.anim.x = pos.x;
+      view.anim.z = pos.z;
+      view.anim.y = CARD_T + 6;
+      view.anim.scale = 1;
+      view.applyAnim();
+    }
+
     const fromX = view.anim.x;
     const fromY = view.anim.y;
     const fromZ = view.anim.z;
