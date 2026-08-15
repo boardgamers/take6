@@ -5,8 +5,8 @@ Guidance for AI agents working in this monorepo.
 ## What this is
 Take 6 (6nimmt-like) — game engine + three web viewers. pnpm workspace, TypeScript ESM.
 - `engine/` (take6-engine) — game logic + `wrapper.ts` (the boardgamers.space contract: init/move/moveAI/logSlice/stripSecret/…)
-- `viewer/` — canvas viewer (Hex Engine)
-- `viewer-svg/` (@gaia-project/take6-viewer) — Vue 2 SVG viewer
+- `viewer/` — canvas viewer (Hex Engine), archived
+- `viewer-svg/` (@gaia-project/take6-viewer) — Vue 2 SVG viewer, archived
 - `viewer-3d/` (take6-viewer-3d) — three.js viewer
 
 ## Rules
