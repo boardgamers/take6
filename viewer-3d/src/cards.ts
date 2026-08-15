@@ -54,6 +54,32 @@ export function cardGeometry(): THREE.BufferGeometry {
     for (let i = 0; i < uv.count; i++) {
       uv.setXY(i, (pos.getX(i) - bb.min.x) / size.x, (pos.getY(i) - bb.min.y) / size.y);
     }
+    // ExtrudeGeometry lumps both caps into material group 0 (front AND back),
+    // so the back cap would show the face texture and z-fight the back plane.
+    // Split group 0 by triangle depth: front cap (z>0) keeps material 0, back
+    // cap (z<0) becomes material 2 (the card back). Group 1 (side walls) is
+    // untouched.
+    const caps = geo.groups[0];
+    const frontTris: number[] = [];
+    const backTris: number[] = [];
+    for (let i = caps.start; i < caps.start + caps.count; i += 3) {
+      const z = (pos.getZ(i) + pos.getZ(i + 1) + pos.getZ(i + 2)) / 3;
+      (z > 0 ? frontTris : backTris).push(i, i + 1, i + 2);
+    }
+    const index = geo.getIndex();
+    const reorder = (tris: number[]) => (index ? tris.map((v) => index.getX(v)) : tris);
+    const frontIdx = reorder(frontTris);
+    const backIdx = reorder(backTris);
+    const sideIdx: number[] = [];
+    const side = geo.groups[1];
+    for (let i = side.start; i < side.start + side.count; i++) {
+      sideIdx.push(index ? index.getX(i) : i);
+    }
+    geo.setIndex([...frontIdx, ...backIdx, ...sideIdx]);
+    geo.clearGroups();
+    geo.addGroup(0, frontIdx.length, 0); // front cap -> face texture
+    geo.addGroup(frontIdx.length, backIdx.length, 2); // back cap -> card back
+    geo.addGroup(frontIdx.length + backIdx.length, sideIdx.length, 1); // walls -> edge
     geo.computeVertexNormals();
     geometryCache.set(key, geo);
   }
@@ -359,7 +385,6 @@ export class CardView {
   zIndex = 0;
 
   private front: THREE.Mesh;
-  private backPlane: THREE.Mesh;
   private frontMaterial: THREE.MeshStandardMaterial;
   private backMaterial: THREE.MeshStandardMaterial;
 
@@ -379,18 +404,12 @@ export class CardView {
       roughness: 0.6,
       metalness: 0.02
     });
-    // Body: front face texture + card-stock edge. The back cap shares group 0
-    // but is occluded by the back plane below.
-    this.front = new THREE.Mesh(cardGeometry(), [this.frontMaterial, cardEdgeMaterial()]);
+    // One extruded body; the geometry's three material groups map front cap →
+    // face texture, side walls → card stock, back cap → card back. No separate
+    // back plane, so nothing z-fights mid-flip.
+    this.front = new THREE.Mesh(cardGeometry(), [this.frontMaterial, cardEdgeMaterial(), this.backMaterial]);
     this.front.castShadow = true;
     this.group.add(this.front);
-
-    // Thin back face plane (avoids needing a second full extrusion).
-    const backGeo = new THREE.ShapeGeometry(roundedRectShape(CARD_W, CARD_H, 0.55), 6);
-    this.backPlane = new THREE.Mesh(backGeo, this.backMaterial);
-    this.backPlane.rotation.y = Math.PI;
-    this.backPlane.position.z = -CARD_T / 2 - 0.046;
-    this.group.add(this.backPlane);
     this.applyAnim();
   }
 
@@ -415,13 +434,12 @@ export class CardView {
     }
   }
 
-  /** Release per-view GPU resources (textures, materials, back geometry). */
+  /** Release per-view GPU resources (textures, materials). */
   dispose() {
     this.disposeMap(this.frontMaterial);
     this.disposeMap(this.backMaterial);
     this.frontMaterial.dispose();
     this.backMaterial.dispose();
-    this.backPlane.geometry.dispose();
   }
 
   private disposeMap(material: THREE.MeshStandardMaterial) {
