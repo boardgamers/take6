@@ -515,7 +515,14 @@ export class GameController {
         entry = this.hiddenPicks.get(p);
         if (entry) {
           this.hiddenPicks.delete(p);
-          this.cards.delete(entry.view.number);
+          // Remove the entry's CURRENT map key (a synthetic negative key for a
+          // hidden pick) — deleting by entry.view.number would be a no-op
+          // (it's 0) and leave a stale duplicate frozen on the table.
+          for (const [key, e] of this.cards) {
+            if (e === entry) {
+              this.cards.delete(key);
+            }
+          }
           if (card.number !== 0) {
             this.cards.set(card.number, entry);
             entry.view.setCard(card);
