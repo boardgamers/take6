@@ -994,6 +994,17 @@ export class GameController {
     });
   }
 
+  /**
+   * The player just picked a row to place/take: drop every row-choice
+   * highlight and light only the chosen row's slot in the "selected" color.
+   * applyPlace clears it once the card has landed.
+   */
+  private markRowSelected(row: number) {
+    this.sceneMgr.clearSlotHighlights();
+    const col = Math.min(this.G!.rows[row].length, BOARD_COLS - 1);
+    this.sceneMgr.setSlotHighlight(row, col, "selected");
+  }
+
   private updateStatus() {
     const G = this.G;
     if (!G || this.me === undefined) {
@@ -1119,6 +1130,7 @@ export class GameController {
       const row = this.sceneMgr.rowAtPoint(tablePos.x, tablePos.z);
       const target = row === null ? null : moves.placeCard.find((m) => m.row === row);
       if (target) {
+        this.markRowSelected(target.row);
         this.sendMove({ name: MoveName.PlaceCard, data: { row: target.row, replace: target.replace } });
         return;
       }
@@ -1318,6 +1330,7 @@ export class GameController {
       }
       const target = row === null ? null : moves.placeCard.find((m) => m.row === row);
       if (target) {
+        this.markRowSelected(target.row);
         this.sendMove({ name: MoveName.PlaceCard, data: { row: target.row, replace: target.replace } });
         return;
       }

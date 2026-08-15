@@ -398,7 +398,7 @@ export class SceneManager {
     return hits[0] ?? null;
   }
 
-  setSlotHighlight(row: number, col: number, mode: "none" | "ok" | "danger" | "hint") {
+  setSlotHighlight(row: number, col: number, mode: "none" | "ok" | "danger" | "hint" | "selected") {
     const theme = getTheme();
     const mat = this.slotMats[row * BOARD_COLS + col];
     if (!mat) {
@@ -416,6 +416,10 @@ export class SceneManager {
       case "hint":
         mat.color.set(theme.slotHighlight);
         mat.opacity = 0.3;
+        break;
+      case "selected":
+        mat.color.set(theme.slotSelected);
+        mat.opacity = 0.55;
         break;
       default:
         mat.color.set(theme.slot);

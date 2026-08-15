@@ -20,6 +20,7 @@ export interface Theme {
   slotHighlight: number;
   slotDanger: number;
   slotOk: number;
+  slotSelected: number;
   ambientSky: number;
   ambientGround: number;
   ambientIntensity: number;
@@ -44,6 +45,7 @@ export const themes: Record<"light" | "dark", Theme> = {
     slotHighlight: 0xffd54f,
     slotDanger: 0xef5350,
     slotOk: 0x69f0ae,
+    slotSelected: 0x7c4dff,
     ambientSky: 0xffffff,
     ambientGround: 0x8d6e63,
     ambientIntensity: 0.75,
@@ -66,6 +68,7 @@ export const themes: Record<"light" | "dark", Theme> = {
     slotHighlight: 0xffca28,
     slotDanger: 0xff5252,
     slotOk: 0x40c4ff,
+    slotSelected: 0xb388ff,
     ambientSky: 0x8fa8c8,
     ambientGround: 0x1a120b,
     ambientIntensity: 0.65,
