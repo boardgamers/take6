@@ -13,7 +13,7 @@ pnpm --filter take6-viewer-3d dev
 
 Then open the printed URL (default http://localhost:5203). You'll get a local game against five AI opponents — no server needed.
 
-To shorten a game while testing, append query params, e.g. `?points=2&handSize=2`.
+Useful query params while testing: `?players=3` changes the number of players (default 6), and `?points=2&handSize=2` shortens the game so you can reach the end screen quickly.
 
 ## Repository layout
 

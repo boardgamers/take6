@@ -4,15 +4,21 @@ import { move as execMove, moveAI, setup, stripSecret } from "take6-engine";
 import launch from "./launch";
 
 /**
- * Standalone mode: play immediately against 5–9 AI players, no server needed.
- * Mirrors viewer-svg's self-contained launcher.
+ * Standalone mode: play immediately against AI opponents, no server needed.
+ * Defaults to 6 players; override with the `players` query param or the
+ * `numPlayers` argument.
  */
-export function launchSelfContained(selector: string | HTMLElement = "#app", numPlayers = 6) {
+export function launchSelfContained(selector: string | HTMLElement = "#app", numPlayers?: number) {
   const emitter = launch(selector);
 
-  // Dev/demo shortcut: ?points=2&handSize=2 shortens the game (handy to reach
-  // the end screen quickly when testing locally).
+  // Dev/demo shortcuts: ?players=3 changes the table size, ?points=2&handSize=2
+  // shortens the game (handy to reach the end screen quickly when testing locally).
   const params = new URLSearchParams(location.search);
+  const players = Number(params.get("players"));
+  if (players > 0) {
+    numPlayers = players;
+  }
+  numPlayers ??= 6;
   const points = Number(params.get("points"));
   const handSize = Number(params.get("handSize"));
   const options = { ...(points > 0 ? { points } : null), ...(handSize > 0 ? { handSize } : null) };

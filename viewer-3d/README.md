@@ -19,7 +19,7 @@ pnpm install
 pnpm --filter take6-viewer-3d dev
 ```
 
-This serves a standalone demo that plays a local game against five AI opponents. Add `?points=2&handSize=2` to shorten a game while testing.
+This serves a standalone demo that plays a local game against AI opponents. Query params: `?players=3` changes the number of players (default 6), and `?points=2&handSize=2` shortens a game while testing.
 
 ## Building
 
