@@ -995,11 +995,20 @@ export class GameController {
   }
 
   /**
+   * Row picked but placement not yet applied. updateStatus MUST honor this:
+   * the host can redeliver log/availableMoves between the selection and the
+   * placeCard log item, and each redelivery re-runs updateStatus — without
+   * this flag it would re-light every row-choice highlight over the selection.
+   */
+  private selectedRow: number | null = null;
+
+  /**
    * The player just picked a row to place/take: drop every row-choice
    * highlight and light only the chosen row's slot in the "selected" color.
-   * applyPlace clears it once the card has landed.
+   * updateStatus clears it once the placement resolved (placeCard gone).
    */
   private markRowSelected(row: number) {
+    this.selectedRow = row;
     this.sceneMgr.clearSlotHighlights();
     const col = Math.min(this.G!.rows[row].length, BOARD_COLS - 1);
     this.sceneMgr.setSlotHighlight(row, col, "selected");
@@ -1012,16 +1021,25 @@ export class GameController {
       return;
     }
     const moves = G.players[this.me]?.availableMoves;
+    if (!moves?.placeCard) {
+      this.selectedRow = null;
+    }
     this.sceneMgr.clearSlotHighlights();
     if (moves?.chooseCard) {
       this.ui.setStatus("Choose a card to play");
     } else if (moves?.placeCard) {
       const mustReplace = moves.placeCard.every((m) => m.replace);
       this.ui.setStatus(mustReplace ? "Too low! Pick a row to take 😬" : "Place your card on a row");
-      // Highlight the valid target rows
-      for (const m of moves.placeCard) {
-        const col = Math.min(G.rows[m.row].length, BOARD_COLS - 1);
-        this.sceneMgr.setSlotHighlight(m.row, col, m.replace ? "danger" : "ok");
+      if (this.selectedRow !== null) {
+        // Selection pending: keep only the chosen row lit until it resolves.
+        const col = Math.min(G.rows[this.selectedRow].length, BOARD_COLS - 1);
+        this.sceneMgr.setSlotHighlight(this.selectedRow, col, "selected");
+      } else {
+        // Highlight the valid target rows
+        for (const m of moves.placeCard) {
+          const col = Math.min(G.rows[m.row].length, BOARD_COLS - 1);
+          this.sceneMgr.setSlotHighlight(m.row, col, m.replace ? "danger" : "ok");
+        }
       }
     } else if (G.phase === Phase.ChooseCard) {
       this.ui.setStatus("Waiting for other players…");
