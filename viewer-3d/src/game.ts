@@ -3,7 +3,8 @@ import { EventEmitter } from "events";
 import { cloneDeep } from "lodash";
 import type { AvailableMoves, Card, GameState, LogItem, Move } from "take6-engine";
 import { ended, GameEventName, MoveName, Phase, reconstructState } from "take6-engine";
-import { Easing, Spring, cancelTweensOf, delay, tweenView, tweenViewAsync, updateTweens } from "./anim";
+import { Easing, Spring, cancelTweensOf, delay, isViewAnimating, tweenView, tweenViewAsync, updateTweens } from "./anim";
+import { animLog } from "./anim-log";
 import { CARD_H, CARD_T, CARD_W, CardView, refreshCardTextures } from "./cards";
 import { logToText } from "./log-text";
 import { SceneManager, boardSlot, handSlot, handY, pickSlot, BOARD_COLS, BOARD_ROWS, HAND_LIFT_Y as HAND_LIFT } from "./scene";
@@ -386,6 +387,7 @@ export class GameController {
 
   private async applyRoundStart(playerHands: Card[][], board: Card[], round: number) {
     const G = this.G!;
+    animLog.call("applyRoundStart", `round=${round} board=[${board.map((c) => c.number)}]`);
     G.round = round;
     // Reset the mirror's rows to the new starters. Without this G.rows keeps
     // last round's cards, and pruneStaleCards (which builds its alive-set from
@@ -472,12 +474,16 @@ export class GameController {
             })()
           );
         } else {
-          // Opponent hands stay hidden offscreen
+          // Opponent hands stay hidden offscreen. Park them far behind the
+          // table (z=-80), not just low — a stand-in at the table origin (x=0,
+          // z=0) is what shows up as the stray card in the middle of the board.
           const view = new CardView(card.number === 0 ? card : { number: 0, points: 0 });
+          view.anim.x = 0;
+          view.anim.z = -80 - p * 4;
           view.anim.y = -100;
           view.anim.scale = 0.01;
-          // The constructor's applyAnim ran while anim.y was still 0, leaving the
-          // group at the table origin; re-apply so the card actually moves offscreen.
+          // The constructor's applyAnim ran while anim was still at the origin;
+          // re-apply so the card actually moves offscreen.
           view.applyAnim();
           this.sceneMgr.scene.add(view.group);
           this.cards.set(card.number || -(p * 1000 + i + 1), { view, zone: { kind: "offscreen" } });
@@ -490,6 +496,7 @@ export class GameController {
 
   private async applyReveal(cards: Card[]) {
     const G = this.G!;
+    animLog.call("applyReveal", `cards=[${cards.map((c) => c.number)}]`);
     const flips: Promise<void>[] = [];
     const nPlayers = G.players.length;
     cards.forEach((card, p) => {
@@ -618,6 +625,7 @@ export class GameController {
 
   private async applyChoose(player: number, card: Card) {
     const G = this.G!;
+    animLog.call("applyChoose", `player=${player} card=${card.number} hidden=${player !== this.me && card.number === 0}`);
     const pl = G.players[player];
     pl.faceDownCard = card;
     // Remove from hand (engine semantics)
@@ -725,6 +733,7 @@ export class GameController {
 
   private async applyPlace(player: number, row: number, replace: boolean) {
     const G = this.G!;
+    animLog.call("applyPlace", `player=${player} row=${row} replace=${replace}`);
     const pl = G.players[player];
     const card = pl.faceDownCard;
     if (!card) {
@@ -1419,6 +1428,18 @@ export class GameController {
     requestAnimationFrame(this.renderer_loop);
     const dt = Math.min(this.clock.getDelta(), 0.05);
     updateTweens(dt);
+
+    // Record the trajectory of every card currently being animated (and every
+    // hidden card, so stray placeholders are caught even mid-flight). Static
+    // cards are skipped to keep the buffer focused on actual movement.
+    if (animLog.enabled) {
+      for (const entry of this.cards.values()) {
+        const v = entry.view;
+        if (isViewAnimating(v) || v.card.number === 0) {
+          animLog.frame(`card#${v.card.number}`, entry.zone.kind, v.anim, v.lift);
+        }
+      }
+    }
 
     // Drag springs
     if (this.drag) {
