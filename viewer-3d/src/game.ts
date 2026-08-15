@@ -3,7 +3,7 @@ import { EventEmitter } from "events";
 import { cloneDeep } from "lodash";
 import type { AvailableMoves, Card, GameState, LogItem, Move } from "take6-engine";
 import { ended, GameEventName, MoveName, Phase, reconstructState } from "take6-engine";
-import { Easing, Spring, delay, tweenView, tweenViewAsync, updateTweens } from "./anim";
+import { Easing, Spring, cancelTweensOf, delay, tweenView, tweenViewAsync, updateTweens } from "./anim";
 import { CARD_H, CARD_T, CARD_W, CardView, refreshCardTextures } from "./cards";
 import { logToText } from "./log-text";
 import { SceneManager, boardSlot, handSlot, handY, pickSlot, BOARD_COLS, BOARD_ROWS, HAND_LIFT_Y as HAND_LIFT } from "./scene";
@@ -1214,6 +1214,11 @@ export class GameController {
     }
     const e = this.hoverEntry;
     this.hoverEntry = null;
+    // Cancel the in-flight lift tween first: it would otherwise keep running
+    // and re-raise the lift on the next frames, leaving the card stuck hovered
+    // (e.g. after a fast sweep across the fan, where the next card's hover
+    // tween only cancels *its own* tweens, not this card's).
+    cancelTweensOf(e.view);
     // Settle synchronously: flight tweens about to start on this card (e.g.
     // the just-played card flying to the pick zone) would cancel a lift tween
     // before its first frame and leave the lift stuck mid-value.
