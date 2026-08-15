@@ -43,6 +43,11 @@ html.dark .t6-root, .t6-root.t6-dark {
   position: absolute; top: max(8px, env(safe-area-inset-top)); left: 50%; transform: translateX(-50%);
   display: flex; gap: 10px; align-items: center; z-index: 5; pointer-events: none;
 }
+/* Narrow screens: the centered top bar would collide with the corner player
+   badges, which live in the same top band. Drop it below the badge row. */
+@media (max-width: 620px) {
+  .t6-topbar { top: max(44px, calc(env(safe-area-inset-top) + 36px)); }
+}
 .t6-round {
   background: var(--t6-panel); border: 1px solid var(--t6-panel-border);
   backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
