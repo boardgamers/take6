@@ -1,6 +1,6 @@
 {
   "name": "take6-viewer-3d",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "A 3D (three.js) viewer for take6, playable on desktop and mobile",
   "type": "module",
   "main": "src/index.ts",

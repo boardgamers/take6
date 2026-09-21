@@ -73,11 +73,11 @@ export function launch(selector: string | HTMLElement, opts?: { standalone?: boo
 
   // Host UI preferences: dark mode, plus the host's dev-mode signal which
   // mounts the same debug controls the local harness uses.
-  item.addListener("preferences", (prefs: { dark?: boolean; devMode?: boolean } | null) => {
+  item.addListener("preferences", (prefs: { dark?: boolean; devMode?: boolean; analysis?: boolean } | null) => {
     if (prefs && typeof prefs.dark === "boolean") {
       applyHostTheme(prefs.dark);
     }
-    if (prefs?.devMode === true) {
+    if (prefs?.devMode === true && !prefs.analysis) {
       controller.enableDevTools();
     }
   });

@@ -121,3 +121,15 @@ export function logSlice (G: GameState, options?: {player?: number; start?: numb
       engine.stripSecret(replay({...G, log: G.log.slice(0, options!.end)}), options!.player).players.map(pl => pl.availableMoves)
   };
 }
+
+export function createAnalysis(data: GameState, { to }: { to: number; sourceEnded: boolean }): GameState {
+  if (!Number.isInteger(to) || to < 0 || to > data.log.length) throw new Error("Invalid history position");
+  let state = engine.setup(data.players.length, data.options, data.seed);
+  state.players.forEach((player, seat) => { player.name = data.players[seat].name; });
+  for (const entry of data.log.slice(0, to)) {
+    if (entry.type === "move") state = engine.move(state, entry.move, entry.player);
+  }
+  return state;
+}
+
+export const analysisMove = engine.move;
