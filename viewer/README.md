@@ -2,9 +2,9 @@
 
 > **Archived** — this canvas (Hex Engine) viewer is no longer maintained. See [`viewer-3d/`](../viewer-3d/) for the current viewer.
 
-[https://donkeytech.github.io/take6-viewer/dist/index.html](Online Demo)
+## Play online at
 
-Or you can head on to [gaiaform.io](https://gaiaform.io) to play the game with other players!
+[boardgamers.space](https://boardgamers.space)
 
 ## Usage
 
